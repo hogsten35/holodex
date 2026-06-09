@@ -580,7 +580,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 
     <!-- ═══════ SETTINGS PAGE ═══════ -->
     <div class="page" id="page-settings">
-      <div class="sec-head"><h2>Settings</h2></div>
+      <div class="sec-head">
+        <button class="back-btn" onclick="showPage('home')" style="padding:0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Back
+        </button>
+        <h2>Settings</h2>
+      </div>
       <div class="settings-sec">
         <h3>eBay API</h3>
         <div class="settings-row"><div><div class="sl">Client ID</div><div class="ss">App ID · developer.ebay.com</div></div><input type="password" id="sClientId" placeholder="Paste here" oninput="saveKeys()"/></div>

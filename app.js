@@ -458,12 +458,18 @@ function renderEbayActivity(activity) {
     </div>`;
 }
 
-async function callEbaySearch(query, limit = 50) {
-  const res = await fetch('/.netlify/functions/ebay-search', {
+function fetchWithTimeout(url, options = {}, timeoutMs = 8500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+async function callEbaySearch(query, limit = 35) {
+  const res = await fetchWithTimeout('/.netlify/functions/ebay-search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, limit })
-  });
+  }, 8500);
 
   let data = {};
   try { data = await res.json(); } catch(e) {}
@@ -480,12 +486,11 @@ async function fetchEbayPrices(query) {
   const cardNumber = currentCard?.number ? String(currentCard.number).split('/')[0] : '';
   const setName = currentCard?.set || '';
 
+  // Keep this tight so scan results are not delayed. If these miss, the user can use manual search.
   const queries = [
     query,
     `Pokemon ${cardName} ${cardNumber} ${setName}`.trim(),
-    `Pokemon ${cardName} ${cardNumber}`.trim(),
-    `Pokemon ${cardName} holo`,
-    `Pokemon ${cardName}`
+    cardNumber ? `Pokemon ${cardName} ${cardNumber}`.trim() : `Pokemon ${cardName}`
   ].filter(Boolean);
 
   const seen = new Set();
@@ -495,7 +500,7 @@ async function fetchEbayPrices(query) {
     if (seen.has(q.toLowerCase())) continue;
     seen.add(q.toLowerCase());
     try {
-      const data = await callEbaySearch(q, 75);
+      const data = await callEbaySearch(q, 35);
       const rawItems = data.itemSummaries || [];
       const items = rawItems.filter(item => titleLooksRelevant(item.title, cardName));
       const prices = aggregatePrices(items);
@@ -519,6 +524,67 @@ async function fetchPriceHistory(query) {
   // The current eBay Browse endpoint returns current market listings, not historical sold data.
   // Returning null lets the existing chart render a smooth estimate based on the current average.
   return null;
+}
+
+function showScanResultsLoading() {
+  document.getElementById('resultArea').classList.add('show');
+  document.getElementById('resultName').textContent = currentCard?.name || 'Unknown';
+  document.getElementById('resultMeta').textContent = [currentCard?.set, currentCard?.number ? '#' + currentCard.number : null, currentCard?.year].filter(Boolean).join('  ·  ');
+
+  const rBadge = document.getElementById('rarityBadge');
+  if (currentCard?.rarity) { rBadge.textContent = currentCard.rarity; rBadge.style.display = 'inline-flex'; }
+  else rBadge.style.display = 'none';
+
+  const cond = currentCard?.condition || 'NM';
+  const cBadge = document.getElementById('condBadge');
+  cBadge.textContent = cond + (currentCard?.condition_notes ? '  —  ' + currentCard.condition_notes : '');
+  cBadge.className = 'badge badge-' + cond.toLowerCase();
+
+  document.getElementById('priceSpinner').style.display = 'flex';
+  document.getElementById('priceTable').style.display = 'none';
+  document.getElementById('noKeys').style.display = 'none';
+  const srcEl = document.getElementById('priceSrc');
+  if (srcEl) srcEl.textContent = 'Loading eBay market listings…';
+  renderEbayActivity(null);
+  renderMockChart('priceChart');
+  document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function loadEbayForCurrentCard(card) {
+  if (!card) return;
+  if (!hasKeys()) {
+    document.getElementById('priceSpinner').style.display = 'none';
+    document.getElementById('noKeys').textContent = 'eBay market pricing is not configured on the server.';
+    document.getElementById('noKeys').style.display = 'block';
+    return;
+  }
+
+  try {
+    const [prices, history] = await Promise.all([
+      fetchEbayPrices(card.search_query),
+      fetchPriceHistory(card.search_query)
+    ]);
+
+    // Ignore stale results if another scan started while eBay was loading.
+    if (currentCard !== card) return;
+
+    card._prices = prices;
+    card._history = history;
+    currentCard._prices = prices;
+    currentCard._history = history;
+
+    renderPriceTable(prices);
+    renderHistoryChart('priceChart', history, '3m', true);
+    const srcEl = document.getElementById('priceSrc');
+    if (prices && srcEl && !srcEl.textContent) srcEl.textContent = 'eBay market listings';
+  } catch (e) {
+    if (currentCard !== card) return;
+    console.warn('eBay background lookup failed:', e.message);
+    document.getElementById('priceSpinner').style.display = 'none';
+    const srcEl = document.getElementById('priceSrc');
+    if (srcEl) srcEl.textContent = 'eBay lookup timed out — try again or use manual search';
+    renderPriceTable(null);
+  }
 }
 
 
@@ -790,16 +856,20 @@ async function scanCard() {
     if(scanAborted) return;
 
     const imgPromise = fetchCardImage(currentCard);
-    let prices=null, history=null;
-    if(hasKeys()) [prices,history]=await Promise.all([fetchEbayPrices(currentCard.search_query),fetchPriceHistory(currentCard.search_query)]);
     if(scanAborted) return;
+
+    // Do not make the full-screen scanner wait on eBay. Show the card first, then load pricing in the result panel.
+    setScanStatus('Starting market lookup…'); setProgress(92);
+    await sleep(250);
     setStep(3,'done'); setProgress(100); setScanStatus('Complete!');
-    await sleep(500);
+    await sleep(300);
     hideScanOverlay();
-    currentCard._prices=prices; currentCard._history=history;
+
+    showScanResultsLoading();
     const cardImgUrl = await imgPromise;
     if(cardImgUrl) document.getElementById('resultImg').src=cardImgUrl;
-    showScanResults(prices, history);
+
+    loadEbayForCurrentCard(currentCard);
   } catch(err){
     hideScanOverlay();
     document.getElementById('resultArea').classList.remove('show');
@@ -826,9 +896,8 @@ async function showCardResults(card) {
   document.getElementById('noKeys').style.display='none';
   if(!hasKeys()){document.getElementById('priceSpinner').style.display='none';document.getElementById('noKeys').style.display='block';renderMockChart('priceChart');}
   else {
-    const [prices,history]=await Promise.all([fetchEbayPrices(card.search_query),fetchPriceHistory(card.search_query)]);
-    card._prices=prices;card._history=history;
-    showScanResults(prices,history);
+    showScanResultsLoading();
+    loadEbayForCurrentCard(card);
   }
 }
 

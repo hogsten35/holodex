@@ -36,8 +36,7 @@ function hasKeys() { const k=getKeys(); return !!(k.clientId&&k.clientSecret); }
 
 async function testEbayKeys() {
   const statusEl = document.getElementById('ebayStatus');
-  statusEl.style.display = 'block';
-  statusEl.style.color = 'var(--text2)';
+  statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--text2);';
   statusEl.textContent = 'Testing connection…';
   const { clientId, clientSecret } = getKeys();
   if (!clientId || !clientSecret) {
@@ -53,14 +52,14 @@ async function testEbayKeys() {
     });
     const d = await res.json();
     if (d.access_token) {
-      statusEl.style.color = 'var(--green)';
+      statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--green);font-weight:600;';
       statusEl.textContent = '✓ Connected! Real eBay sold prices are now active.';
     } else {
-      statusEl.style.color = 'var(--red)';
-      statusEl.textContent = '✗ Auth failed: ' + (d.error_description || d.error || 'Check your keys');
+      statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
+      statusEl.textContent = '✗ Auth failed: ' + (d.error_description || d.error || 'Check your keys — make sure you are using Production keys');
     }
   } catch(e) {
-    statusEl.style.color = 'var(--red)';
+    statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
     statusEl.textContent = '✗ Error: ' + e.message;
   }
 }

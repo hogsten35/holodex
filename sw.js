@@ -1,5 +1,5 @@
-const CACHE = 'holodex-v2';
-const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/scan-phone.html'];
+const CACHE = 'holodex-v3';
+const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/scan-phone.html', '/favicon.ico', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));

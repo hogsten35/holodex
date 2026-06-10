@@ -287,16 +287,7 @@ async function manualSearch() {
 }
 
 // ── EBAY TOKEN ────────────────────────────────────────────
-async function getEbayToken() {
-  if(ebayToken&&Date.now()<ebayTokenExp) return ebayToken;
-  try {
-    const res = await fetch('/.netlify/functions/ebay-token', { method:'POST', headers:{'Content-Type':'application/json'} });
-    const d = await res.json();
-    if(d.access_token){ebayToken=d.access_token;ebayTokenExp=Date.now()+(d.expires_in-60)*1000;return ebayToken;}
-    console.warn('eBay token error:', d.error);
-  } catch(e){ console.warn('eBay token fetch error:', e.message); }
-  return null;
-}
+// Token handling moved to ebay-search Netlify function — no client-side token needed
 
 async function fetchEbayPrices(query) {
   const token = await getEbayToken();
@@ -314,65 +305,7 @@ async function fetchEbayPrices(query) {
     cardName                                        // bare name
   ];
 
-  for(const q of queries) {
-    try {
-      const res = await fetch(
-        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&limit=50&category_ids=183454&sort=newlyListed`,
-        { headers: { 'Authorization': 'Bearer '+token, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', 'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=0' } }
-      );
-      const d = await res.json();
-      if(d.errors) { console.warn('eBay error:', d.errors[0]?.message); continue; }
-      const items = (d.itemSummaries || []).filter(i => parseFloat(i.price?.value) > 0);
-      if(!items.length) { console.log('No results for query:', q); continue; }
 
-      console.log(`eBay: ${items.length} results for "${q}"`);
-      document.getElementById('priceSrc').textContent = `eBay · ${items.length} listings`;
-
-      // Group by condition
-      // Pokemon TCG cards on eBay use "Ungraded" or "Like New" etc.
-      // Map all ungraded/general conditions to NM as base, price range covers all grades
-      const groups = { NM: [], LP: [], MP: [] };
-      items.forEach(item => {
-        const price = parseFloat(item.price?.value);
-        if(!price || price > 5000) return; // skip outliers
-        const cond = (item.condition||'').toLowerCase();
-        const id = item.conditionId || '';
-        if(cond.includes('graded') || cond.includes('psa') || cond.includes('bgs')) return; // skip graded
-        if(cond === 'new' || cond === 'like new' || id === '1000' || cond === 'ungraded') groups.NM.push(price);
-        else if(cond.includes('very good') || id === '1500') groups.LP.push(price);
-        else if(cond.includes('good') || id === '2000' || id === '2500') groups.MP.push(price);
-        else groups.NM.push(price); // default everything else to NM bucket
-      });
-
-      const out = {};
-      Object.entries(groups).forEach(([cond, prices]) => {
-        out[cond] = { avg: prices.reduce((a,b)=>a+b,0)/prices.length, high: Math.max(...prices), low: Math.min(...prices), count: prices.length };
-      });
-      return Object.keys(out).length ? out : null;
-
-    } catch(e) { console.warn('eBay fetch error:', e.message); }
-  }
-  document.getElementById('priceSrc').textContent = 'No eBay listings found';
-  return null;
-}
-
-async function fetchPriceHistory(query) {
-  const token = await getEbayToken(); if(!token) return null;
-  const cardName = currentCard?.name || query.split(' ').slice(0,3).join(' ');
-  try {
-    const res = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent('Pokemon ' + cardName)}&limit=50&category_ids=183454&sort=newlyListed`,
-      {headers:{'Authorization':'Bearer '+token,'X-EBAY-C-MARKETPLACE-ID':'EBAY_US','X-EBAY-C-ENDUSERCTX':'affiliateCampaignId=0'}}
-    );
-    const d = await res.json();
-    const items = (d.itemSummaries||[]).filter(i=>parseFloat(i.price?.value)>0);
-    // Spread items over past 90 days as a price trend proxy
-    return items.map((item,i)=>({
-      date: new Date(Date.now() - (items.length-i) * (90/items.length) * 24*60*60*1000),
-      price: parseFloat(item.price?.value)
-    })).reverse();
-  } catch(e){ return null; }
-}
 
 
 

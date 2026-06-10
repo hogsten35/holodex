@@ -25,35 +25,41 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── KEYS — stored server-side in Netlify env vars ────────
-// No client-side key storage needed — ebay-token function handles auth
+// The browser never receives your secret keys. Netlify Functions read them from environment variables.
 function getKeys() { return { clientId: '', clientSecret: '' }; }
 function saveKeys() {}
-function hasKeys() { return true; } // always try — server will handle missing keys gracefully
+function hasKeys() { return true; } // Always attempt pricing; the server will report missing env vars.
 
 async function testEbayKeys() {
   const statusEl = document.getElementById('ebayStatus');
+  if(!statusEl) return;
   statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--text2);';
-  statusEl.textContent = 'Testing connection…';
-  const { clientId, clientSecret } = getKeys();
-  if (!clientId || !clientSecret) {
-    statusEl.style.color = 'var(--red)';
-    statusEl.textContent = '⚠️ Enter both App ID and Cert ID first.';
-    return;
-  }
+  statusEl.textContent = 'Testing server-side eBay connection…';
+
   try {
-    const res = await fetch('/.netlify/functions/ebay-token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId, clientSecret })
-    });
-    const d = await res.json();
-    if (d.access_token) {
+    const res = await fetch('/.netlify/functions/ebay-debug');
+    const d = await res.json().catch(() => ({}));
+
+    if (res.ok && d.step === 'search' && !d.errors && (d.itemCount || 0) > 0) {
       statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--green);font-weight:600;';
-      statusEl.textContent = '✓ Connected! Real eBay sold prices are now active.';
-    } else {
-      statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
-      statusEl.textContent = '✗ Auth failed: ' + (d.error_description || d.error || 'Check your keys — make sure you are using Production keys');
+      statusEl.textContent = `✓ Connected! eBay returned ${d.itemCount} test listings.`;
+      return;
     }
+
+    if (d.step === 'keys') {
+      statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
+      statusEl.textContent = '✗ eBay keys are missing in Netlify env vars.';
+      return;
+    }
+
+    if (d.step === 'token') {
+      statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
+      statusEl.textContent = '✗ eBay token failed: ' + (d.error || 'check Production Client ID / Client Secret');
+      return;
+    }
+
+    statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
+    statusEl.textContent = '✗ eBay search failed: ' + (d.error || d.errors?.[0]?.message || 'unknown error');
   } catch(e) {
     statusEl.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--red);';
     statusEl.textContent = '✗ Error: ' + e.message;
@@ -322,28 +328,122 @@ async function manualSearch() {
   await showCardResults(currentCard);
 }
 
-// ── EBAY TOKEN ────────────────────────────────────────────
-// Token handling moved to ebay-search Netlify function — no client-side token needed
+// ── EBAY PRICING ─────────────────────────────────────────
+// Pricing requests go through /.netlify/functions/ebay-search so secrets stay on Netlify.
+function parseMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
-async function fetchEbayPrices(query) {
-  const token = await getEbayToken();
-  if(!token) {
-    document.getElementById('priceSrc').textContent = 'eBay token failed — check Netlify env vars';
-    return null;
+function titleLooksRelevant(title, cardName) {
+  const t = String(title || '').toLowerCase();
+  const nameWords = String(cardName || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const bad = /\b(proxy|custom|digital|code card|online code|empty pack|pack fresh only|jumbo|oversized|sticker|art card)\b/i;
+  if (bad.test(t)) return false;
+  // Avoid large mixed lots because they inflate/deflate card value. Keep tiny lots because some sellers say "lot 1".
+  if (/\b(lot|bundle|collection)\b/i.test(t) && !/\b(single|individual)\b/i.test(t)) return false;
+  if (!nameWords.length) return true;
+  return nameWords.some(w => t.includes(w));
+}
+
+function inferCondition(item) {
+  const txt = `${item.title || ''} ${item.condition || ''} ${item.conditionId || ''}`.toLowerCase();
+  if (/\b(dmg|damaged|poor)\b/.test(txt)) return 'DMG';
+  if (/\b(hp|heavy played|heavily played)\b/.test(txt)) return 'HP';
+  if (/\b(mp|moderate played|moderately played)\b/.test(txt)) return 'MP';
+  if (/\b(lp|light played|lightly played|excellent)\b/.test(txt)) return 'LP';
+  if (/\b(nm|near mint|mint|ungraded|raw)\b/.test(txt)) return 'NM';
+  return 'NM';
+}
+
+function aggregatePrices(items) {
+  const buckets = { NM: [], LP: [], MP: [], HP: [], DMG: [] };
+  for (const item of items) {
+    const price = parseMoney(item.price?.value || item.currentBidPrice?.value);
+    if (!price) continue;
+    if (item.price?.currency && item.price.currency !== 'USD') continue;
+    const shipping = parseMoney(item.shippingOptions?.[0]?.shippingCost?.value) || 0;
+    const total = +(price + shipping).toFixed(2);
+    buckets[inferCondition(item)].push(total);
   }
 
-  // Build fallback queries from specific to broad
-  const cardName = currentCard?.name || query.split(' ').slice(0,3).join(' ');
+  const out = {};
+  for (const cond of CONDITIONS) {
+    const arr = buckets[cond].filter(Number.isFinite).sort((a,b)=>a-b);
+    if (!arr.length) continue;
+    // Trim extreme outliers when we have enough listings.
+    const trimmed = arr.length >= 8 ? arr.slice(1, -1) : arr;
+    const avg = trimmed.reduce((s,n)=>s+n,0) / trimmed.length;
+    out[cond] = {
+      avg: +avg.toFixed(2),
+      low: +trimmed[0].toFixed(2),
+      high: +trimmed[trimmed.length - 1].toFixed(2),
+      count: trimmed.length
+    };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+async function callEbaySearch(query, limit = 50) {
+  const res = await fetch('/.netlify/functions/ebay-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, limit })
+  });
+
+  let data = {};
+  try { data = await res.json(); } catch(e) {}
+
+  if (!res.ok || data.error) {
+    throw new Error(data.error || `eBay search failed (${res.status})`);
+  }
+  return data;
+}
+
+async function fetchEbayPrices(query) {
+  const srcEl = document.getElementById('priceSrc');
+  const cardName = currentCard?.name || String(query || '').replace(/^pokemon\s+/i,'').split(/\s+/).slice(0,3).join(' ');
+  const cardNumber = currentCard?.number ? String(currentCard.number).split('/')[0] : '';
+  const setName = currentCard?.set || '';
+
   const queries = [
-    query,                                          // full optimized query
-    `Pokemon ${cardName} holo`,                     // name + holo
-    `Pokemon ${cardName}`,                          // just name
-    cardName                                        // bare name
-  ];
+    query,
+    `Pokemon ${cardName} ${cardNumber} ${setName}`.trim(),
+    `Pokemon ${cardName} ${cardNumber}`.trim(),
+    `Pokemon ${cardName} holo`,
+    `Pokemon ${cardName}`
+  ].filter(Boolean);
 
+  const seen = new Set();
+  let lastError = null;
 
+  for (const q of queries) {
+    if (seen.has(q.toLowerCase())) continue;
+    seen.add(q.toLowerCase());
+    try {
+      const data = await callEbaySearch(q, 75);
+      const rawItems = data.itemSummaries || [];
+      const items = rawItems.filter(item => titleLooksRelevant(item.title, cardName));
+      const prices = aggregatePrices(items);
+      if (prices) {
+        if(srcEl) srcEl.textContent = `eBay market listings · ${items.length} matches`;
+        return prices;
+      }
+    } catch(e) {
+      lastError = e;
+      break;
+    }
+  }
 
+  if(srcEl) srcEl.textContent = lastError ? `eBay unavailable: ${lastError.message}` : 'No eBay matches found';
+  return null;
+}
 
+async function fetchPriceHistory(query) {
+  // The current eBay Browse endpoint returns current market listings, not historical sold data.
+  // Returning null lets the existing chart render a smooth estimate based on the current average.
+  return null;
+}
 
 async function fetchCardImage(card) {
   try {
@@ -484,7 +584,7 @@ function showScanResults(prices,history) {
   document.getElementById('noKeys').style.display='none';
   renderPriceTable(prices);
   renderHistoryChart('priceChart',history,'3m',true);
-  if(prices) document.getElementById('priceSrc').textContent='eBay sold data';
+  if(prices && !document.getElementById('priceSrc').textContent) document.getElementById('priceSrc').textContent='eBay market data';
   document.getElementById('resultArea').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
@@ -492,10 +592,12 @@ function showScanResults(prices,history) {
 function renderPriceTable(prices) {
   document.getElementById('priceSpinner').style.display='none';
   if(!prices){
-    document.getElementById('noKeys').textContent='No eBay sold listings found for this card.';
+    document.getElementById('priceTable').style.display='none';
+    document.getElementById('noKeys').textContent='No eBay listings found for this card yet. Try manual search with the card number/set.';
     document.getElementById('noKeys').style.display='block';
     return;
   }
+  document.getElementById('noKeys').style.display='none';
   document.getElementById('priceTable').style.display='table';
   document.getElementById('priceTbody').innerHTML=CONDITIONS.map(c=>{
     const p=prices[c];

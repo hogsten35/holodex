@@ -505,6 +505,42 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .top-card-name{font-size:10px;font-weight:600;color:var(--text);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .top-card-price{font-size:11px;color:var(--green);font-weight:700;margin-top:1px;}
 
+
+/* Collection value timeline */
+.value-timeline-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin:0 0 14px;}
+.value-timeline-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.value-timeline-title{font-family:var(--fh);font-size:15px;font-weight:700;}
+.value-timeline-sub{font-size:12px;color:var(--text3);margin-top:2px;}
+.value-timeline-chart{position:relative;height:170px;margin:8px 0 12px;}
+.timeline-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px;}
+.timeline-stat{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rs);padding:10px 8px;min-width:0;}
+.timeline-stat .tv{font-family:var(--fh);font-size:16px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.timeline-stat .tl{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
+.timeline-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.timeline-actions .btn{min-height:36px;}
+.timeline-status{font-size:12px;color:var(--text3);flex:1;min-width:160px;}
+@media(max-width:520px){.timeline-stats{grid-template-columns:repeat(2,1fr);}.value-timeline-head{flex-direction:column;align-items:stretch;}.chart-tabs{align-self:flex-start;}}
+
+/* Batch scanner */
+.batch-panel{display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin:14px 0;}
+.batch-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
+.batch-title{font-family:var(--fh);font-size:15px;font-weight:700;}
+.batch-subtitle{font-size:12px;color:var(--text3);line-height:1.45;margin-top:2px;}
+.batch-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+.batch-cond{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);padding:9px 12px;color:var(--text);font-size:13px;font-family:var(--fb);}
+.batch-progress-wrap{height:5px;background:var(--bg3);border-radius:8px;overflow:hidden;margin-bottom:10px;}
+.batch-progress{height:100%;background:linear-gradient(90deg,var(--purple),var(--purple2));width:0%;transition:width .25s ease;}
+.batch-summary{font-size:12px;color:var(--text2);margin-bottom:10px;}
+.batch-list{max-height:260px;overflow:auto;border-top:1px solid var(--border);}
+.batch-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);}
+.batch-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--text3);}
+.batch-dot.run{background:var(--purple2);box-shadow:0 0 0 4px rgba(124,58,237,.12);animation:pulse 1.2s ease infinite;}
+.batch-dot.ok{background:var(--green);}
+.batch-dot.err{background:var(--red);}
+.batch-main{min-width:0;flex:1;}
+.batch-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.batch-sub{font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
 /* TOAST */
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:11px 20px;border-radius:22px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.5);}
 </style>
@@ -575,7 +611,28 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <button class="btn btn-ghost" onclick="document.getElementById('fileIn').click()">🖼 Gallery</button>
         <button class="btn btn-primary" onclick="scanCard()">Identify</button>
       </div>
+      <button class="btn btn-outline btn-full" style="margin-top:8px;" onclick="triggerBatchUpload()">📚 Batch Upload Scans</button>
       <input type="file" id="fileIn" accept="image/*" style="display:none" onchange="handleFile(this)"/>
+      <input type="file" id="batchFileIn" accept="image/*" multiple style="display:none" onchange="handleBatchFiles(this)"/>
+
+      <div class="batch-panel" id="batchPanel">
+        <div class="batch-head">
+          <div>
+            <div class="batch-title">Batch Scanner</div>
+            <div class="batch-subtitle">Select multiple card photos. HoloDex scans them one at a time, auto-adds them, and uses TCGplayer raw-card values. eBay is skipped here so big batches do not crawl.</div>
+          </div>
+          <button class="btn btn-outline btn-xs" onclick="cancelBatchScan()">Stop</button>
+        </div>
+        <div class="batch-controls">
+          <select class="batch-cond" id="batchCond">
+            <option value="NM">Near Mint</option><option value="LP">Lightly Played</option><option value="MP">Moderately Played</option><option value="HP">Heavily Played</option><option value="DMG">Damaged</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="triggerBatchUpload()">Choose Photos</button>
+        </div>
+        <div class="batch-progress-wrap"><div class="batch-progress" id="batchProgress"></div></div>
+        <div class="batch-summary" id="batchSummary">Choose photos to start.</div>
+        <div class="batch-list" id="batchList"></div>
+      </div>
 
       <div class="manual-toggle" onclick="toggleManual()">✏️ Type card details instead</div>
       <div class="manual-area" id="manualArea">
@@ -685,6 +742,31 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
           <div class="cs"><div class="v" id="collTop">—</div><div class="l">Most Valuable</div></div>
         </div>
       </div>
+
+      <div class="value-timeline-card">
+        <div class="value-timeline-head">
+          <div>
+            <div class="value-timeline-title">📈 Collection Value Timeline</div>
+            <div class="value-timeline-sub" id="timelineLastSnap">Last snapshot: —</div>
+          </div>
+          <div class="chart-tabs" id="collectionTimelineTabs">
+            <button class="chart-tab" onclick="switchCollectionTimeline('7d',this)">7D</button>
+            <button class="chart-tab active" onclick="switchCollectionTimeline('30d',this)">30D</button>
+            <button class="chart-tab" onclick="switchCollectionTimeline('all',this)">All</button>
+          </div>
+        </div>
+        <div class="value-timeline-chart"><canvas id="collectionValueChart"></canvas></div>
+        <div class="timeline-stats">
+          <div class="timeline-stat"><div class="tv" id="timelineToday">$0.00</div><div class="tl">Today</div></div>
+          <div class="timeline-stat"><div class="tv" id="timelineChange">+$0.00</div><div class="tl">Change</div></div>
+          <div class="timeline-stat"><div class="tv" id="timelineHigh">$0.00</div><div class="tl">High</div></div>
+          <div class="timeline-stat"><div class="tv" id="timelineLow">$0.00</div><div class="tl">Low</div></div>
+        </div>
+        <div class="timeline-actions">
+          <button class="btn btn-primary btn-sm" id="refreshValuesBtn" onclick="refreshCollectionValues()">↻ Refresh Values</button>
+          <div class="timeline-status" id="refreshValueStatus">Uses TCGplayer market values and saves history to cloud sync.</div>
+        </div>
+      </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
         <div class="search-wrap" style="flex:1;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -790,6 +872,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
       <div class="settings-sec">
         <h3>Collection</h3>
+        <div class="settings-row tap" onclick="refreshCollectionValues()"><div><div class="sl">Refresh Market Values</div><div class="ss">Update TCGplayer values and save today’s timeline point</div></div><span class="sarr">›</span></div>
         <div class="settings-row tap" onclick="exportCollection()"><div><div class="sl">Export as JSON</div><div class="ss">Full backup with all data</div></div><span class="sarr">›</span></div>
         <div class="settings-row tap" onclick="exportCSV()"><div><div class="sl">Export as CSV</div><div class="ss">Open in Excel or Sheets</div></div><span class="sarr">›</span></div>
         <div class="settings-row tap" onclick="document.getElementById('importFile').click()"><div><div class="sl">Import Collection</div><div class="ss">Restore from JSON</div></div><span class="sarr">›</span></div>
@@ -802,7 +885,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
       <div class="settings-sec">
         <h3>About</h3>
-        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Cloud Sync + Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.2</span></div>
+        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Cloud Sync + Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.3</span></div>
       </div>
     </div>
 

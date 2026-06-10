@@ -19,6 +19,12 @@ let cloudSyncTimer = null;
 let cloudSyncMuted = false;
 let cloudSyncInFlight = false;
 
+// ── VALUE TIMELINE + BATCH STATE ─────────────────────────
+let collectionTimelineChart = null;
+let currentTimelineRange = '30d';
+let batchScanCancelled = false;
+let batchScanRunning = false;
+
 const CONDITIONS = ['NM','LP','MP','HP','DMG'];
 const EBAY_COND = { NM:'1000', LP:'1500', MP:'2000', HP:'3000', DMG:'4000' };
 
@@ -106,15 +112,93 @@ let valueChartInstance = null;
 function renderValueChart() {
   const canvas = document.getElementById('valueChartCanvas');
   if(!canvas) return;
+  if(!collection.length) { canvas.parentElement.style.display='none'; return; }
   if(valueChartInstance){valueChartInstance.destroy();valueChartInstance=null;}
-  if(valueHistory.length < 2) { canvas.parentElement.style.display='none'; return; }
+
+  const points = getValueHistoryPoints('30d');
+  if(points.length < 1) { canvas.parentElement.style.display='none'; return; }
   canvas.parentElement.style.display='block';
-  const labels = valueHistory.map(v=>{ const d=new Date(v.date); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
-  const values = valueHistory.map(v=>v.value);
-  valueChartInstance = new Chart(canvas,{
+
+  const labels = points.map(v=>formatHistoryDate(v.date));
+  const values = points.map(v=>v.value);
+  valueChartInstance = createValueLineChart(canvas, labels, values, { mini:true });
+}
+
+function currentCollectionValue(){
+  return +(collection.reduce((s,c)=>s+(Number(c.avgPrice)||0),0).toFixed(2));
+}
+
+function normalizeHistoryDate(date){
+  if(!date) return new Date().toISOString().substring(0,10);
+  if(date instanceof Date) return date.toISOString().substring(0,10);
+  return String(date).substring(0,10);
+}
+
+function formatHistoryDate(date){
+  const d = new Date(normalizeHistoryDate(date) + 'T12:00:00');
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+function normalizeValueHistory(){
+  const map = new Map();
+  for(const row of (Array.isArray(valueHistory) ? valueHistory : [])){
+    if(!row) continue;
+    const date = normalizeHistoryDate(row.date);
+    const value = Number(row.value);
+    if(!Number.isFinite(value)) continue;
+    map.set(date, { date, value:+value.toFixed(2) });
+  }
+  valueHistory = Array.from(map.values()).sort((a,b)=>a.date.localeCompare(b.date)).slice(-730);
+  localStorage.setItem('holodex_value_history', JSON.stringify(valueHistory));
+  return valueHistory;
+}
+
+function snapshotCollectionValue(){
+  const today = new Date().toISOString().substring(0,10);
+  normalizeValueHistory();
+  const total = currentCollectionValue();
+  const existing = valueHistory.find(v=>v.date===today);
+  if(existing) existing.value = total;
+  else valueHistory.push({date:today,value:total});
+  valueHistory = valueHistory.sort((a,b)=>a.date.localeCompare(b.date)).slice(-730);
+  localStorage.setItem('holodex_value_history', JSON.stringify(valueHistory));
+  return {date:today,value:total};
+}
+
+function getValueHistoryPoints(range='30d'){
+  normalizeValueHistory();
+  const todayPoint = { date:new Date().toISOString().substring(0,10), value:currentCollectionValue() };
+  const map = new Map(valueHistory.map(v=>[v.date, v]));
+  map.set(todayPoint.date, todayPoint);
+  let points = Array.from(map.values()).sort((a,b)=>a.date.localeCompare(b.date));
+
+  const cutoff = new Date();
+  if(range === '7d') cutoff.setDate(cutoff.getDate()-7);
+  else if(range === '30d') cutoff.setDate(cutoff.getDate()-30);
+  else cutoff.setFullYear(1970);
+  if(range !== 'all'){
+    const c = cutoff.toISOString().substring(0,10);
+    points = points.filter(p=>p.date >= c);
+  }
+
+  if(points.length === 1){
+    const d = new Date(points[0].date + 'T12:00:00');
+    d.setDate(d.getDate()-1);
+    points.unshift({date:d.toISOString().substring(0,10), value:points[0].value});
+  }
+  return points;
+}
+
+function createValueLineChart(canvas, labels, values, opts={}){
+  return new Chart(canvas,{
     type:'line',
-    data:{labels,datasets:[{data:values,borderColor:'#7c3aed',backgroundColor:ctx=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,100);g.addColorStop(0,'rgba(124,58,237,0.25)');g.addColorStop(1,'rgba(124,58,237,0)');return g;},fill:true,tension:0.4,pointRadius:0,borderWidth:2.5}]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1c2230',callbacks:{label:ctx=>' $'+ctx.parsed.y.toFixed(2)}}},scales:{x:{display:false},y:{display:false}}}
+    data:{labels,datasets:[{
+      data:values,
+      borderColor:'#7c3aed',
+      backgroundColor:ctx=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,opts.mini?90:190);g.addColorStop(0,'rgba(124,58,237,0.28)');g.addColorStop(1,'rgba(124,58,237,0)');return g;},
+      fill:true,tension:0.35,pointRadius:opts.mini?0:3,pointHoverRadius:5,borderWidth:2.5
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1c2230',borderColor:'rgba(255,255,255,0.1)',borderWidth:1,callbacks:{label:ctx=>' $'+Number(ctx.parsed.y).toFixed(2)}}},scales:{x:{display:!opts.mini,ticks:{color:'#484f58',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'},border:{display:false}},y:{display:!opts.mini,ticks:{color:'#484f58',font:{size:10},callback:v=>'$'+Number(v).toFixed(0)},grid:{color:'rgba(255,255,255,0.05)'},border:{display:false}}}}
   });
 }
 
@@ -319,6 +403,144 @@ function handleFile(input) {
     setTimeout(()=>scanCard(), 300);
   };
   reader.readAsDataURL(file);
+}
+
+
+// ── BATCH SCAN UPLOAD ─────────────────────────────────────
+function triggerBatchUpload(){ document.getElementById('batchFileIn')?.click(); }
+function cancelBatchScan(){ batchScanCancelled = true; }
+
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => reject(new Error('Could not read '+file.name));
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderBatchPanel(files){
+  const panel = document.getElementById('batchPanel');
+  const list = document.getElementById('batchList');
+  const progress = document.getElementById('batchProgress');
+  if(!panel || !list || !progress) return;
+  panel.style.display = 'block';
+  progress.style.width = '0%';
+  document.getElementById('batchSummary').textContent = `Ready to scan ${files.length} photo${files.length!==1?'s':''}.`;
+  list.innerHTML = files.map((f,i)=>`<div class="batch-row" id="batchRow${i}"><span class="batch-dot wait"></span><div class="batch-main"><div class="batch-name">${escapeHtml(f.name)}</div><div class="batch-sub">Waiting…</div></div></div>`).join('');
+}
+
+function updateBatchRow(i, state, title, sub=''){
+  const row = document.getElementById('batchRow'+i); if(!row) return;
+  const dot = row.querySelector('.batch-dot');
+  const name = row.querySelector('.batch-name');
+  const subEl = row.querySelector('.batch-sub');
+  dot.className = 'batch-dot '+state;
+  if(title) name.textContent = title;
+  subEl.textContent = sub;
+}
+
+function escapeHtml(str){
+  return String(str||'').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+}
+
+async function identifyCardFromBase64(imageBase64){
+  const res = await fetch('/.netlify/functions/identify',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({imageBase64})
+  });
+  const d = await res.json().catch(()=>({}));
+  if(d._apiError) throw new Error('API error: ' + d._apiError);
+  if(d.error) throw new Error(d.error.message || d.error || 'Identify failed');
+  const raw = d.content?.[0]?.text?.trim() || '';
+  const m = raw.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error('Could not parse card data');
+  const parsed = JSON.parse(m[0]);
+  parsed._tcgId = null; parsed._prices = null; parsed._history = null;
+  return resolveCardWithTcg(parsed);
+}
+
+function collectionEntryFromResolvedCard(card, condition='NM', imageUrl=''){
+  const prices = buildTcgMarketPrices(card);
+  return {
+    id: Date.now() + Math.floor(Math.random()*100000),
+    added: new Date().toISOString(),
+    name: card.name,
+    pokemon: card.pokemon,
+    set: card.set,
+    set_id: card.set_id,
+    number: card.number,
+    year: card.year,
+    rarity: card.rarity,
+    hp: card.hp,
+    types: card.types,
+    artist: card.artist,
+    condition,
+    search_query: card.search_query,
+    image: imageUrl || card._tcgImage || '',
+    avgPrice: prices?.[condition]?.avg || null,
+    tcgId: card._tcgId || null,
+    priceSource: prices ? 'TCGplayer' : null,
+    priceVariant: prices?._variantLabel || null
+  };
+}
+
+async function handleBatchFiles(input){
+  const files = Array.from(input.files || []).filter(f=>f.type.startsWith('image/'));
+  input.value = '';
+  if(!files.length) return;
+  if(batchScanRunning){ toast('Batch scan already running'); return; }
+  if(files.length > 75 && !confirm(`You selected ${files.length} photos. This may take a while and use API credits. Continue?`)) return;
+
+  batchScanRunning = true;
+  batchScanCancelled = false;
+  renderBatchPanel(files);
+
+  // Prevent a cloud write after every single card; sync once at the end.
+  const prevCloudMuted = cloudSyncMuted;
+  cloudSyncMuted = true;
+
+  const cond = document.getElementById('batchCond')?.value || 'NM';
+  let added = 0, failed = 0;
+
+  for(let i=0;i<files.length;i++){
+    if(batchScanCancelled) break;
+    const file = files[i];
+    const pct = Math.round((i / files.length) * 100);
+    document.getElementById('batchProgress').style.width = pct + '%';
+    document.getElementById('batchSummary').textContent = `Scanning ${i+1} of ${files.length}… ${added} added, ${failed} failed.`;
+    updateBatchRow(i, 'run', file.name, 'Compressing photo…');
+
+    try{
+      const dataUrl = await fileToDataUrl(file);
+      const b64 = await compressImage(dataUrl, 1200, 0.84);
+      updateBatchRow(i, 'run', file.name, 'Identifying card…');
+      const card = await identifyCardFromBase64(b64);
+      updateBatchRow(i, 'run', card.name || file.name, 'Matching print and price…');
+      const img = card._tcgImage || await fetchCardImage(card) || ('data:image/jpeg;base64,'+b64);
+      collection.push(collectionEntryFromResolvedCard(card, cond, img));
+      added++;
+      updateBatchRow(i, 'ok', card.name || 'Added card', [card.set, card.number?'#'+card.number:null, `$${(collection[collection.length-1].avgPrice||0).toFixed(2)}`].filter(Boolean).join(' · '));
+      saveCollection();
+      renderCollection();
+      renderHomeStats();
+    }catch(e){
+      failed++;
+      updateBatchRow(i, 'err', file.name, e.message || 'Could not identify');
+    }
+    await sleep(350);
+  }
+
+  cloudSyncMuted = prevCloudMuted;
+  if(added) saveCollection();
+
+  document.getElementById('batchProgress').style.width = '100%';
+  document.getElementById('batchSummary').textContent = batchScanCancelled
+    ? `Batch stopped. ${added} added, ${failed} failed.`
+    : `Batch complete. ${added} added, ${failed} failed.`;
+  batchScanRunning = false;
+  if(added) toast(`✓ Batch added ${added} card${added!==1?'s':''}`);
 }
 
 // ── MANUAL SEARCH ─────────────────────────────────────────
@@ -1169,15 +1391,10 @@ function removeFromCollection(id) {
 
 function saveCollection(){
   localStorage.setItem('holodex_collection',JSON.stringify(collection));
-  // Track daily value for history graph
-  const total = collection.reduce((s,c)=>s+(c.avgPrice||0),0);
-  const today = new Date().toISOString().substring(0,10);
-  valueHistory = valueHistory.filter(v=>v.date!==today);
-  valueHistory.push({date:today,value:total});
-  if(valueHistory.length>365) valueHistory=valueHistory.slice(-365);
-  localStorage.setItem('holodex_value_history',JSON.stringify(valueHistory));
+  snapshotCollectionValue();
   markLocalSave();
   scheduleCloudSync();
+  renderCollectionTimeline();
 }
 function saveWishlist(){
   localStorage.setItem('holodex_wishlist',JSON.stringify(wishlist));
@@ -1211,6 +1428,7 @@ function renderCollection() {
   document.getElementById('collCards').textContent=collection.length;
   document.getElementById('collSets').textContent=sets;
   document.getElementById('collTop').textContent=top?(top.name.split(' ').slice(0,2).join(' ')):('—');
+  renderCollectionTimeline();
 
   // Dynamic pokemon chips
   document.querySelectorAll('#filterBar .dyn').forEach(e=>e.remove());
@@ -1275,6 +1493,96 @@ async function openCollCard(cardId){
   if(card.tcgId){openCardModal(card.tcgId);return;}
   try{const q=encodeURIComponent(`name:"${card.name}"${card.set_id?' set.id:'+card.set_id:''}`);const res=await fetch(`https://api.pokemontcg.io/v2/cards?q=${q}&pageSize=1`);const d=await res.json();if(d.data?.[0]){openCardModal(d.data[0].id);return;}}catch(e){}
   toast('Could not load card details');
+}
+
+
+// ── COLLECTION VALUE TIMELINE ─────────────────────────────
+function switchCollectionTimeline(range, btn){
+  currentTimelineRange = range;
+  document.querySelectorAll('#collectionTimelineTabs .chart-tab').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  renderCollectionTimeline();
+}
+
+function renderCollectionTimeline(){
+  const canvas = document.getElementById('collectionValueChart');
+  if(!canvas) return;
+  const total = currentCollectionValue();
+  const points = getValueHistoryPoints(currentTimelineRange);
+  const labels = points.map(p=>formatHistoryDate(p.date));
+  const values = points.map(p=>p.value);
+
+  if(collectionTimelineChart){ collectionTimelineChart.destroy(); collectionTimelineChart = null; }
+  collectionTimelineChart = createValueLineChart(canvas, labels, values, { mini:false });
+
+  const first = values[0] ?? total;
+  const change = +(total - first).toFixed(2);
+  const pct = first ? ((change / first) * 100) : 0;
+  const high = values.length ? Math.max(...values) : total;
+  const low = values.length ? Math.min(...values) : total;
+  const lastSnap = valueHistory.length ? valueHistory[valueHistory.length-1].date : new Date().toISOString().substring(0,10);
+
+  setText('timelineToday', '$'+total.toFixed(2));
+  setText('timelineChange', `${change>=0?'+':''}$${change.toFixed(2)} ${first?`(${pct>=0?'+':''}${pct.toFixed(1)}%)`:''}`);
+  setText('timelineHigh', '$'+high.toFixed(2));
+  setText('timelineLow', '$'+low.toFixed(2));
+  setText('timelineLastSnap', 'Last snapshot: '+formatHistoryDate(lastSnap));
+
+  const changeEl = document.getElementById('timelineChange');
+  if(changeEl) changeEl.style.color = change >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function setText(id, txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
+
+async function refreshCollectionValues(){
+  if(!collection.length){ toast('No cards to refresh yet'); return; }
+  const status = document.getElementById('refreshValueStatus');
+  const btn = document.getElementById('refreshValuesBtn');
+  if(btn) btn.disabled = true;
+  if(status) status.textContent = 'Refreshing TCGplayer market values…';
+
+  let updated = 0, skipped = 0;
+  for(let i=0;i<collection.length;i++){
+    const c = collection[i];
+    if(status) status.textContent = `Refreshing ${i+1} of ${collection.length}: ${c.name || 'card'}…`;
+    try{
+      let apiCard = null;
+      if(c.tcgId){
+        const res = await fetch(`https://api.pokemontcg.io/v2/cards/${encodeURIComponent(c.tcgId)}`);
+        const d = await res.json();
+        apiCard = d.data || null;
+      }
+      if(!apiCard){
+        const q = [`name:"${c.name}"`, c.set_id ? `set.id:${c.set_id}` : '', c.number ? `number:${firstCardNumber(c.number)}` : ''].filter(Boolean).join(' ');
+        const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=1`);
+        const d = await res.json();
+        apiCard = d.data?.[0] || null;
+      }
+      if(!apiCard){ skipped++; continue; }
+      const resolved = tcgToHoloDexCard(apiCard, c);
+      const prices = buildTcgMarketPrices(resolved);
+      const cond = c.condition || 'NM';
+      if(prices?.[cond]?.avg){
+        c.avgPrice = prices[cond].avg;
+        c.priceSource = 'TCGplayer';
+        c.priceVariant = prices._variantLabel || c.priceVariant || null;
+        c.tcgId = resolved._tcgId || c.tcgId || null;
+        c.image = c.image || resolved._tcgImage || '';
+        updated++;
+      } else skipped++;
+    }catch(e){
+      console.warn('Value refresh failed:', c.name, e.message);
+      skipped++;
+    }
+    await sleep(120);
+  }
+
+  saveCollection();
+  renderCollection();
+  renderHomeStats();
+  if(status) status.textContent = `Done. Updated ${updated}, skipped ${skipped}.`;
+  if(btn) btn.disabled = false;
+  toast(`Values refreshed · ${updated} updated`);
 }
 
 // ── SETS ──────────────────────────────────────────────────
@@ -1705,6 +2013,7 @@ function applyCloudData(data, opts={}){
     renderCollection();
     renderWishlist();
     renderHomeStats();
+    renderCollectionTimeline();
   } finally {
     cloudSyncMuted = false;
   }

@@ -14,7 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"/>
 <title>HoloDex — BossHog Gaming</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root{
   --bg:#0d1117;--bg2:#161b22;--bg3:#1c2230;--bg4:#222d3a;
@@ -362,6 +362,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .settings-row.tap:active{opacity:.75;}
 .sarr{color:var(--text3);font-size:18px;}
 
+/* SETTINGS PAGE SPECIFIC */
+.settings-topbar{display:flex;align-items:center;justify-content:space-between;padding:16px 0 18px;border-bottom:1px solid var(--border);margin-bottom:20px;}
+.settings-title{font-family:var(--fh);font-size:18px;font-weight:700;color:var(--text);}
+.settings-back-btn{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:9px 18px;color:var(--text2);font-size:14px;font-weight:600;font-family:var(--fb);cursor:pointer;line-height:1.2;}
+.settings-back-btn:hover{background:var(--bg4);color:var(--text);}
+.ebay-info-box{background:var(--purple-bg);border:1px solid rgba(124,58,237,.25);border-radius:var(--rs);padding:12px 14px;margin-bottom:12px;font-size:12px;color:var(--purple3);line-height:1.7;}
+.ebay-info-box strong{display:block;margin-bottom:2px;font-size:13px;}
+.ebay-status-msg{font-size:13px;padding:8px 4px;min-height:0;display:none;}
+.test-ebay-btn{display:block;width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);padding:12px;color:var(--text2);font-size:14px;font-weight:600;font-family:var(--fb);cursor:pointer;margin-top:8px;text-align:center;}
+.test-ebay-btn:hover{background:var(--bg4);color:var(--text);}
+
 /* TOAST */
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:11px 20px;border-radius:22px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.5);}
 </style>
@@ -580,25 +591,22 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 
     <!-- ═══════ SETTINGS PAGE ═══════ -->
     <div class="page" id="page-settings">
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 0 20px;border-bottom:1px solid var(--border);margin-bottom:20px;">
-        <span style="font-family:var(--fh);font-size:18px;font-weight:700;color:var(--text);">Settings</span>
-        <button id="settingsBackBtn" onclick="showPage('home')" style="all:unset;cursor:pointer;display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 16px;color:var(--text2);font-size:13px;font-weight:600;font-family:var(--fb);line-height:1;">
-          &#8592; Back
-        </button>
+      <div class="settings-topbar">
+        <span class="settings-title">Settings</span>
+        <button class="settings-back-btn" onclick="showPage('home')">&#8592; Back</button>
       </div>
       <div class="settings-sec">
         <h3>eBay API — Real Sold Prices</h3>
-        <div style="background:var(--purple-bg);border:1px solid rgba(124,58,237,.25);border-radius:var(--rs);padding:12px 14px;margin-bottom:10px;font-size:12px;color:var(--purple3);line-height:1.6;">
-          <strong style="display:block;margin-bottom:4px;">How to get your keys:</strong>
-          1. Go to <strong>developer.ebay.com</strong> → sign in<br/>
-          2. Click <strong>My Account → Application Keysets</strong><br/>
-          3. Under <strong>Production</strong> keys copy your <strong>App ID</strong> and <strong>Cert ID</strong><br/>
-          4. Paste them below — keys are saved in your browser only
+        <div class="ebay-info-box">
+          <strong>How to get your keys:</strong><br/>
+          1. Go to developer.ebay.com → My Account → Application Keysets<br/>
+          2. Under Production — copy App ID and Cert ID<br/>
+          3. Paste below — saved in your browser only
         </div>
         <div class="settings-row"><div><div class="sl">App ID (Client ID)</div><div class="ss">Production keyset</div></div><input type="password" id="sClientId" placeholder="Paste App ID" oninput="saveKeys()"/></div>
         <div class="settings-row"><div><div class="sl">Cert ID (Client Secret)</div><div class="ss">Production keyset</div></div><input type="password" id="sClientSecret" placeholder="Paste Cert ID" oninput="saveKeys()"/></div>
-        <div id="ebayStatus" style="font-size:12px;padding:8px 4px;display:none;"></div>
-        <button onclick="testEbayKeys()" style="all:unset;cursor:pointer;display:flex;align-items:center;justify-content:center;width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);padding:10px;color:var(--text2);font-size:13px;font-weight:600;font-family:var(--fb);margin-top:4px;">Test eBay Connection</button>
+        <div id="ebayStatus" class="ebay-status-msg" style="display:none;"></div>
+        <button class="test-ebay-btn" onclick="testEbayKeys()">Test eBay Connection</button>
       </div>
       <div class="settings-sec">
         <h3>Collection</h3>

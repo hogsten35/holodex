@@ -580,12 +580,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 
     <!-- ═══════ SETTINGS PAGE ═══════ -->
     <div class="page" id="page-settings">
-      <div class="sec-head">
-        <button class="back-btn" onclick="showPage('home')" style="padding:0;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 20px;">
+        <h2 style="font-family:var(--fh);font-size:17px;font-weight:600;">Settings</h2>
+        <button onclick="showPage('home')" style="display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);padding:8px 14px;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:var(--fb);">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
           Back
         </button>
-        <h2>Settings</h2>
       </div>
       <div class="settings-sec">
         <h3>eBay API</h3>

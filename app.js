@@ -341,15 +341,33 @@ function parseMoney(value) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+function titleHasCardNumber(title, number) {
+  const t = String(title || '').toLowerCase();
+  const raw = String(number || '').toLowerCase().trim();
+  if (!raw) return true;
+  const full = raw.match(/\d+\s*\/\s*\d+/)?.[0]?.replace(/\s+/g, '') || '';
+  const base = firstCardNumber(raw);
+  if (full && t.replace(/\s+/g, '').includes(full)) return true;
+  if (!base) return true;
+  const unpadded = base.replace(/^0+(?=\d)/, '');
+  return new RegExp(`(^|[^0-9])#?0*${unpadded}([^0-9]|$)`).test(t);
+}
+
 function titleLooksRelevant(title, cardName) {
   const t = String(title || '').toLowerCase();
   const nameWords = String(cardName || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
-  const bad = /\b(proxy|custom|digital|code card|online code|empty pack|pack fresh only|jumbo|oversized|sticker|art card)\b/i;
+
+  // Pricing must stay raw-card focused. Graded/slabbed/sealed/lots are what caused
+  // cards like Pikachu 42/146 to jump to $170 when the raw TCG market is ~$2.
+  const bad = /\b(proxy|custom|digital|code card|online code|empty pack|pack fresh only|jumbo|oversized|sticker|art card|graded|slab|slabbed|psa|cgc|bgs|sgc|tag graded|ace grading|beckett|black label|gem mint|booster|sealed|pack|tin|box)\b/i;
   if (bad.test(t)) return false;
-  // Avoid large mixed lots because they inflate/deflate card value. Keep tiny lots because some sellers say "lot 1".
-  if (/\b(lot|bundle|collection)\b/i.test(t) && !/\b(single|individual)\b/i.test(t)) return false;
+
+  // Avoid mixed lots/bundles because they inflate/deflate single-card value.
+  if (/\b(lot|bundle|collection)\b/i.test(t) && !/\b(single|individual|1 card)\b/i.test(t)) return false;
+
+  if (currentCard?.number && !titleHasCardNumber(t, currentCard.number)) return false;
   if (!nameWords.length) return true;
-  return nameWords.some(w => t.includes(w));
+  return nameWords.every(w => t.includes(w));
 }
 
 function inferCondition(item) {
@@ -526,6 +544,79 @@ async function fetchPriceHistory(query) {
   return null;
 }
 
+
+function selectTcgPriceVariant(card) {
+  const prices = card?._tcgPrices || null;
+  if (!prices) return null;
+
+  const text = cleanText(`${card?.rarity || ''} ${card?.condition_notes || ''} ${card?.visible_text || ''}`);
+  const preferReverse = /reverse/.test(text);
+  const preferHolo = /holo|foil|shiny/.test(text) && !preferReverse;
+
+  const order = preferReverse
+    ? ['reverseHolofoil', 'holofoil', 'normal', '1stEditionHolofoil']
+    : preferHolo
+      ? ['holofoil', 'normal', 'reverseHolofoil', '1stEditionHolofoil']
+      : ['normal', 'holofoil', 'reverseHolofoil', '1stEditionHolofoil'];
+
+  for (const key of order) {
+    const v = prices[key];
+    if (v && (parseMoney(v.market) || parseMoney(v.mid) || parseMoney(v.low))) return { key, data: v };
+  }
+  return null;
+}
+
+function prettyTcgVariant(key) {
+  return ({ normal: 'normal', holofoil: 'holofoil', reverseHolofoil: 'reverse holo', '1stEditionHolofoil': '1st edition holo' })[key] || key;
+}
+
+function buildTcgMarketPrices(card) {
+  const selected = selectTcgPriceVariant(card);
+  if (!selected) return null;
+
+  const market = parseMoney(selected.data.market) || parseMoney(selected.data.mid) || parseMoney(selected.data.low);
+  if (!market) return null;
+
+  const low = parseMoney(selected.data.low) || market;
+  const high = parseMoney(selected.data.high) || market;
+  const multipliers = { NM: 1, LP: 0.85, MP: 0.70, HP: 0.55, DMG: 0.40 };
+  const out = {
+    _source: 'tcgplayer',
+    _variant: selected.key,
+    _variantLabel: prettyTcgVariant(selected.key),
+    _tcgUrl: card?._tcgUrl || null,
+    _note: 'TCGplayer market is used as the primary raw-card value. Non-NM rows are estimates from the NM market.'
+  };
+
+  for (const cond of CONDITIONS) {
+    const mult = multipliers[cond] || 1;
+    out[cond] = {
+      avg: +(market * mult).toFixed(2),
+      low: +(low * mult).toFixed(2),
+      high: +(high * mult).toFixed(2),
+      count: cond === 'NM' ? 'TCG' : 'Est.',
+      estimated: cond !== 'NM'
+    };
+  }
+  return out;
+}
+
+function renderTcgNote(prices) {
+  const el = ensureEbayActivityEl();
+  if (!el) return;
+  if (!prices || prices._source !== 'tcgplayer') return;
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="ea-top">
+      <div>
+        <div class="ea-label">Pricing Source</div>
+        <div>TCGplayer market: <strong>${prices._variantLabel || 'market'}</strong></div>
+        <div class="ea-note">Raw-card market used first. Condition rows below NM are estimates, not sold comps.</div>
+      </div>
+      <div class="ea-pill">Primary</div>
+    </div>`;
+}
+
 function showScanResultsLoading() {
   document.getElementById('resultArea').classList.add('show');
   document.getElementById('resultName').textContent = currentCard?.name || 'Unknown';
@@ -552,15 +643,35 @@ function showScanResultsLoading() {
 
 async function loadEbayForCurrentCard(card) {
   if (!card) return;
+  const srcEl = document.getElementById('priceSrc');
+
+  // Use the verified PokémonTCG.io / TCGplayer market as the primary card value.
+  // eBay Browse is active listings only, so it is useful for activity, but it can be
+  // badly inflated by PSA/CGC slabs and seller outliers.
+  const tcgPrices = buildTcgMarketPrices(card);
+  if (tcgPrices) {
+    card._prices = tcgPrices;
+    card._history = null;
+    if (currentCard === card) {
+      currentCard._prices = tcgPrices;
+      currentCard._history = null;
+    }
+    renderPriceTable(tcgPrices);
+    renderHistoryChart('priceChart', null, '3m', true);
+    if (srcEl) srcEl.textContent = `TCGplayer market · ${tcgPrices._variantLabel || 'market'}`;
+  }
+
   if (!hasKeys()) {
-    document.getElementById('priceSpinner').style.display = 'none';
-    document.getElementById('noKeys').textContent = 'eBay market pricing is not configured on the server.';
-    document.getElementById('noKeys').style.display = 'block';
+    if (!tcgPrices) {
+      document.getElementById('priceSpinner').style.display = 'none';
+      document.getElementById('noKeys').textContent = 'Market pricing is not configured on the server.';
+      document.getElementById('noKeys').style.display = 'block';
+    }
     return;
   }
 
   try {
-    const [prices, history] = await Promise.all([
+    const [ebayPrices, history] = await Promise.all([
       fetchEbayPrices(card.search_query),
       fetchPriceHistory(card.search_query)
     ]);
@@ -568,22 +679,39 @@ async function loadEbayForCurrentCard(card) {
     // Ignore stale results if another scan started while eBay was loading.
     if (currentCard !== card) return;
 
-    card._prices = prices;
-    card._history = history;
-    currentCard._prices = prices;
-    currentCard._history = history;
+    if (tcgPrices) {
+      // Keep TCGplayer as the displayed value. Only attach eBay activity metadata.
+      if (ebayPrices?._activity) {
+        tcgPrices._activity = ebayPrices._activity;
+        renderPriceTable(tcgPrices);
+      } else {
+        renderTcgNote(tcgPrices);
+      }
+      if (srcEl) {
+        const matches = ebayPrices?._activity?.matchCount;
+        srcEl.textContent = `TCGplayer market · ${tcgPrices._variantLabel || 'market'}${matches ? ` · eBay activity ${matches} matches` : ''}`;
+      }
+      return;
+    }
 
-    renderPriceTable(prices);
+    // Fallback only: if TCGplayer has no market price, show filtered active eBay listings.
+    card._prices = ebayPrices;
+    card._history = history;
+    currentCard._prices = ebayPrices;
+    currentCard._history = history;
+    renderPriceTable(ebayPrices);
     renderHistoryChart('priceChart', history, '3m', true);
-    const srcEl = document.getElementById('priceSrc');
-    if (prices && srcEl && !srcEl.textContent) srcEl.textContent = 'eBay market listings';
+    if (ebayPrices && srcEl && !srcEl.textContent) srcEl.textContent = 'Filtered eBay market listings';
   } catch (e) {
     if (currentCard !== card) return;
     console.warn('eBay background lookup failed:', e.message);
-    document.getElementById('priceSpinner').style.display = 'none';
-    const srcEl = document.getElementById('priceSrc');
-    if (srcEl) srcEl.textContent = 'eBay lookup timed out — try again or use manual search';
-    renderPriceTable(null);
+    if (!tcgPrices) {
+      document.getElementById('priceSpinner').style.display = 'none';
+      if (srcEl) srcEl.textContent = 'eBay lookup timed out — try again or use manual search';
+      renderPriceTable(null);
+    } else {
+      renderTcgNote(tcgPrices);
+    }
   }
 }
 
@@ -702,6 +830,8 @@ function tcgToHoloDexCard(apiCard, scan = {}) {
     search_query: `Pokemon ${apiCard.name || scan.name || ''} ${displayNumber || ''} ${apiCard.set?.name || scan.set || ''}`.trim(),
     _tcgId: apiCard.id || scan._tcgId || null,
     _tcgImage: apiCard.images?.large || apiCard.images?.small || scan._tcgImage || null,
+    _tcgPrices: apiCard.tcgplayer?.prices || scan._tcgPrices || null,
+    _tcgUrl: apiCard.tcgplayer?.url || scan._tcgUrl || null,
     _resolvedScore: apiCard._score || null
   };
 }
@@ -924,13 +1054,15 @@ function renderPriceTable(prices) {
   if(!prices){
     renderEbayActivity(null);
     document.getElementById('priceTable').style.display='none';
-    document.getElementById('noKeys').textContent='No eBay listings found for this card yet. Try manual search with the card number/set.';
+    document.getElementById('noKeys').textContent='No market pricing found for this card yet. Try manual search with the exact card number/set.';
     document.getElementById('noKeys').style.display='block';
     return;
   }
   document.getElementById('noKeys').style.display='none';
   document.getElementById('priceTable').style.display='table';
-  renderEbayActivity(prices._activity);
+  if (prices._activity) renderEbayActivity(prices._activity);
+  else if (prices._source === 'tcgplayer') renderTcgNote(prices);
+  else renderEbayActivity(null);
   document.getElementById('priceTbody').innerHTML=CONDITIONS.map(c=>{
     const p=prices[c];
     if(!p) return `<tr><td><span class="badge badge-${c.toLowerCase()}">${c}</span></td><td colspan="4" class="pm">No data</td></tr>`;

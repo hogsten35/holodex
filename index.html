@@ -160,19 +160,72 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .qr-status.err{color:var(--red);font-size:12px;line-height:1.5;}
 
 /* Scan overlay (fullscreen) */
-.scan-overlay-panel{position:fixed;inset:0;z-index:200;background:var(--bg);display:none;flex-direction:column;align-items:center;}
+.scan-overlay-panel{position:fixed;inset:0;z-index:200;background:#000;display:none;flex-direction:column;align-items:center;}
 .scan-overlay-panel.active{display:flex;}
-.scan-card-frame{width:100%;flex:1;position:relative;overflow:hidden;background:#000;}
-.scan-card-frame img{width:100%;height:100%;object-fit:cover;display:block;}
-.scan-card-frame::before,.scan-card-frame::after{content:'';position:absolute;width:36px;height:36px;border-color:var(--purple2);border-style:solid;z-index:3;}
-.scan-card-frame::before{top:20px;left:20px;border-width:3px 0 0 3px;border-radius:4px 0 0 0;}
-.scan-card-frame::after{top:20px;right:20px;border-width:3px 3px 0 0;border-radius:0 4px 0 0;}
-.sbl,.sbr{position:absolute;width:36px;height:36px;border-color:var(--purple2);border-style:solid;z-index:3;}
-.sbl{bottom:20px;left:20px;border-width:0 0 3px 3px;border-radius:0 0 0 4px;}
-.sbr{bottom:20px;right:20px;border-width:0 3px 3px 0;border-radius:0 0 4px 0;}
-.scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--purple2),var(--purple),var(--purple2),transparent);box-shadow:0 0 12px 2px var(--purple);z-index:4;top:0;animation:scanSweep 1.8s ease-in-out infinite;opacity:0;}
+
+/* Full frame — shows the full card image properly */
+.scan-card-frame{width:100%;flex:1;position:relative;overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;}
+.scan-card-frame img{
+  /* Show full card — no cropping */
+  max-width:100%;max-height:100%;
+  width:auto;height:auto;
+  object-fit:contain;display:block;
+  position:relative;z-index:1;
+}
+
+/* Dark vignette outside the card area */
+.scan-card-frame::before{
+  content:'';position:absolute;inset:0;z-index:2;
+  background:radial-gradient(ellipse 70% 85% at 50% 50%, transparent 55%, rgba(0,0,0,0.75) 100%);
+  pointer-events:none;
+}
+
+/* Card-shaped targeting box — portrait card ratio 2.5:3.5 */
+.card-target-box{
+  position:absolute;z-index:5;
+  width:min(72vw, 240px);
+  aspect-ratio:2.5/3.5;
+  top:50%;left:50%;
+  transform:translate(-50%,-55%);
+  pointer-events:none;
+}
+
+/* Corner marks — each corner is an L shape */
+.corner{position:absolute;width:28px;height:28px;}
+.corner::before,.corner::after{content:'';position:absolute;background:var(--purple2);box-shadow:0 0 8px var(--purple-glow);}
+.corner::before{width:100%;height:3px;}
+.corner::after{width:3px;height:100%;}
+.corner.tl{top:0;left:0;border-radius:3px 0 0 0;}
+.corner.tl::before{top:0;left:0;border-radius:3px 3px 0 0;}
+.corner.tl::after{top:0;left:0;border-radius:3px 0 0 3px;}
+.corner.tr{top:0;right:0;border-radius:0 3px 0 0;}
+.corner.tr::before{top:0;right:0;border-radius:3px 3px 0 0;}
+.corner.tr::after{top:0;right:0;border-radius:0 3px 3px 0;}
+.corner.bl{bottom:0;left:0;border-radius:0 0 0 3px;}
+.corner.bl::before{bottom:0;left:0;border-radius:0 0 3px 3px;}
+.corner.bl::after{bottom:0;left:0;border-radius:3px 0 0 3px;}
+.corner.br{bottom:0;right:0;border-radius:0 0 3px 0;}
+.corner.br::before{bottom:0;right:0;border-radius:0 0 3px 3px;}
+.corner.br::after{bottom:0;right:0;border-radius:0 3px 3px 0;}
+
+/* Scan line — constrained inside card target box */
+.scan-line{
+  position:absolute;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--purple2),var(--purple),var(--purple2),transparent);
+  box-shadow:0 0 10px 2px var(--purple);
+  z-index:6;top:0;
+  animation:scanSweep 1.8s ease-in-out infinite;opacity:0;
+}
 .scan-line.active{opacity:1;}
-@keyframes scanSweep{0%{top:5%;opacity:0;}10%{opacity:1;}90%{opacity:1;}100%{top:95%;opacity:0;}}
+@keyframes scanSweep{0%{top:2%;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{top:98%;opacity:0;}}
+
+/* Align hint text below corners */
+.scan-hint-text{
+  position:absolute;bottom:-26px;left:0;right:0;
+  text-align:center;font-size:11px;font-weight:500;
+  color:var(--purple3);letter-spacing:0.05em;
+  text-transform:uppercase;
+}
 .holo-overlay{position:absolute;inset:0;z-index:2;background:linear-gradient(135deg,rgba(124,58,237,0) 0%,rgba(124,58,237,0.08) 25%,rgba(167,139,250,0.12) 50%,rgba(124,58,237,0.08) 75%,rgba(124,58,237,0) 100%);background-size:200% 200%;animation:holoShimmer 3s ease infinite;opacity:0;transition:opacity .4s;pointer-events:none;}
 .holo-overlay.active{opacity:1;}
 @keyframes holoShimmer{0%{background-position:0% 0%;}50%{background-position:100% 100%;}100%{background-position:0% 0%;}}
@@ -450,11 +503,25 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <!-- Fullscreen scan overlay -->
       <div class="scan-overlay-panel" id="scanOverlayPanel">
         <div class="scan-card-frame" id="scanCardFrame">
-          <img id="scanOverlayImg" src="" alt=""/>
-          <div class="scan-data-grid" id="scanDataGrid"></div>
+          <!-- Full card image — object-fit:contain shows the whole card -->
+          <img id="scanOverlayImg" src="" alt="Card being scanned"/>
+
+          <!-- Subtle grid overlay -->
+          <div class="scan-data-grid" id="scanDataGrid" style="position:absolute;inset:0;z-index:2;"></div>
+
+          <!-- Holo shimmer -->
           <div class="holo-overlay" id="holoOverlay"></div>
-          <div class="scan-line" id="scanLine"></div>
-          <div class="sbl"></div><div class="sbr"></div>
+
+          <!-- Card-shaped targeting box with corner marks and scan line inside -->
+          <div class="card-target-box" id="cardTargetBox">
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div class="scan-line" id="scanLine"></div>
+            <div class="scan-hint-text" id="scanHintText">Align card within corners</div>
+          </div>
+
           <div class="scan-status-bar">
             <div class="scan-brand">Holo<span>Dex</span></div>
             <div style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);">

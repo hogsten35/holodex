@@ -311,14 +311,25 @@ async function fetchEbayPrices(query) {
 
 async function fetchCardImage(card) {
   try {
-    const setQ = card.set_id?`set.id:${card.set_id} `:'';
-    const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(setQ+'name:"'+card.name+'"')}&pageSize=1`);
-    const d = await res.json();
-    if(d.data?.[0]){currentCard._tcgId=d.data[0].id;return d.data[0].images?.large||d.data[0].images?.small;}
-    const res2 = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent('name:"'+card.name+'"')}&pageSize=1`);
-    const d2 = await res2.json();
-    if(d2.data?.[0]){currentCard._tcgId=d2.data[0].id;return d2.data[0].images?.large||d2.data[0].images?.small;}
-  } catch(e){}
+    // Build attempts from most to least specific
+    const attempts = [];
+    if(card.set_id && card.number) {
+      const num = card.number.split('/')[0].replace(/^0+/,'');
+      attempts.push(`set.id:${card.set_id} number:${num}`);
+    }
+    if(card.set_id) attempts.push(`set.id:${card.set_id} name:"${card.name}"`);
+    attempts.push(`name:"${card.name}"`);
+
+    for(const q of attempts) {
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=4`);
+      const d = await res.json();
+      if(d.data?.length) {
+        const match = d.data.find(c => card.set_id && c.set?.id === card.set_id) || d.data[0];
+        if(currentCard) currentCard._tcgId = match.id;
+        return match.images?.large || match.images?.small;
+      }
+    }
+  } catch(e) { console.warn('Card image error:', e.message); }
   return null;
 }
 

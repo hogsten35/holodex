@@ -152,13 +152,34 @@ function openLink(url) { window.open(url, '_blank', 'noopener'); }
 // ── FILE HANDLING ─────────────────────────────────────────
 let imgB64 = null;
 function triggerUpload() { document.getElementById('fileIn').click(); }
+
+// Compress image to max 1200px and 85% quality before sending to API
+function compressImage(dataUrl, maxSize=1200, quality=0.85) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else { w = Math.round(w * maxSize / h); h = maxSize; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1]);
+    };
+    img.src = dataUrl;
+  });
+}
+
 function handleFile(input) {
   const file = input.files[0]; if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
-    imgB64 = e.target.result.split(',')[1];
+  reader.onload = async e => {
+    const compressed = await compressImage(e.target.result);
+    imgB64 = compressed;
     const img = document.getElementById('previewImg');
-    img.src = e.target.result; img.style.display = 'block';
+    img.src = 'data:image/jpeg;base64,'+compressed; img.style.display = 'block';
     document.querySelector('.sz-icon').style.display = 'none';
     document.querySelector('.sz-label').style.display = 'none';
     document.querySelector('.sz-sub').style.display = 'none';
@@ -287,9 +308,13 @@ async function scanCard() {
     const d = await res.json();
     if(scanAborted) return;
     setStep(2,'done'); setStep(3,'active'); setScanStatus('Getting value…'); setProgress(75);
+    // Check for API-level errors passed through from function
+    if(d._apiError) throw new Error('API error: ' + d._apiError);
+    if(d.error) throw new Error('Server error: ' + (d.error.message || d.error));
     const raw = d.content?.[0]?.text?.trim()||'';
+    if(!raw) throw new Error('Empty response from AI — check ANTHROPIC_API_KEY is set in Netlify environment variables');
     const m = raw.match(/\{[\s\S]*\}/);
-    if(!m) throw new Error('Could not identify card — try a clearer photo');
+    if(!m) throw new Error('Could not parse card data. Raw response: ' + raw.substring(0, 100));
     currentCard = JSON.parse(m[0]);
     currentCard._tcgId=null; currentCard._prices=null; currentCard._history=null;
     const imgPromise = fetchCardImage(currentCard);

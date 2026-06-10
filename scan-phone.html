@@ -2,117 +2,299 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
 <meta name="theme-color" content="#0d1117"/>
 <title>HoloDex — Phone Scanner</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;}
-.logo{font-family:'Space Grotesk',sans-serif;font-size:26px;font-weight:700;margin-bottom:6px;letter-spacing:-.5px;}
+html,body{height:100%;background:#000;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;overflow:hidden;}
+
+/* Full screen camera */
+#cameraView{position:fixed;inset:0;display:flex;flex-direction:column;}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;}
+
+/* Card frame overlay */
+.frame{
+  position:absolute;z-index:3;
+  width:min(72vw,260px);
+  aspect-ratio:2.5/3.5;
+  top:50%;left:50%;
+  transform:translate(-50%,-58%);
+  pointer-events:none;
+}
+/* Corner marks */
+.c{position:absolute;width:30px;height:30px;}
+.c::before,.c::after{content:'';position:absolute;background:#a78bfa;box-shadow:0 0 8px rgba(124,58,237,0.8);}
+.c::before{width:100%;height:3px;border-radius:2px;}
+.c::after{width:3px;height:100%;border-radius:2px;}
+.c.tl{top:0;left:0;}
+.c.tr{top:0;right:0;}
+.c.tr::before{right:0;}
+.c.tr::after{right:0;}
+.c.bl{bottom:0;left:0;}
+.c.bl::before{bottom:0;}
+.c.bl::after{bottom:0;}
+.c.br{bottom:0;right:0;}
+.c.br::before{bottom:0;right:0;}
+.c.br::after{bottom:0;right:0;}
+
+/* Scan line inside frame */
+.scan-line{
+  position:absolute;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,#a78bfa,#7c3aed,#a78bfa,transparent);
+  box-shadow:0 0 10px rgba(124,58,237,0.8);
+  animation:sweep 2s ease-in-out infinite;
+}
+@keyframes sweep{0%{top:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{top:100%;opacity:0;}}
+
+.frame-label{
+  position:absolute;bottom:-28px;left:0;right:0;
+  text-align:center;font-size:11px;font-weight:600;
+  color:#a78bfa;letter-spacing:0.06em;text-transform:uppercase;
+}
+
+/* Dark vignette */
+.vignette{
+  position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:radial-gradient(ellipse 75% 80% at 50% 42%, transparent 50%, rgba(0,0,0,0.72) 100%);
+}
+
+/* Top bar */
+.topbar{
+  position:absolute;top:0;left:0;right:0;z-index:10;
+  padding:52px 20px 14px;
+  background:linear-gradient(to bottom,rgba(0,0,0,0.65),transparent);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.logo{font-size:17px;font-weight:700;letter-spacing:-0.3px;}
 .logo span{color:#a78bfa;}
-.sub{font-size:13px;color:#8b949e;margin-bottom:36px;text-align:center;}
-.zone{width:100%;max-width:340px;border:1.5px dashed rgba(255,255,255,0.15);border-radius:16px;min-height:210px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;cursor:pointer;background:#161b22;position:relative;overflow:hidden;transition:border-color .2s;}
-.zone:active{border-color:#7c3aed;}
-.zone img{width:100%;height:100%;object-fit:cover;position:absolute;border-radius:14px;}
-.zone-icon{font-size:42px;}
-.zone-label{font-size:15px;font-weight:600;}
-.zone-sub{font-size:13px;color:#8b949e;}
-.btns{display:flex;gap:10px;margin-top:14px;width:100%;max-width:340px;}
-.btn{flex:1;padding:13px;border-radius:10px;border:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:opacity .15s;}
-.btn:active{opacity:.8;}
-.btn-cam{background:#1c2230;color:#e6edf3;border:1px solid rgba(255,255,255,0.12);}
-.btn-send{background:#7c3aed;color:#fff;}
-.btn-send:disabled{opacity:.35;cursor:not-allowed;}
-.status{margin-top:18px;font-size:14px;color:#8b949e;text-align:center;min-height:20px;line-height:1.5;}
-.status.ok{color:#3fb950;font-weight:600;}
-.status.err{color:#f85149;}
-.prog-wrap{width:100%;max-width:340px;height:3px;background:#1c2230;border-radius:2px;margin-top:12px;overflow:hidden;display:none;}
-.prog-fill{height:100%;background:#7c3aed;border-radius:2px;transition:width .4s;}
-.no-session{color:#f85149;font-size:14px;text-align:center;max-width:280px;line-height:1.6;}
+.status-pill{
+  background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.15);
+  border-radius:20px;padding:5px 12px;font-size:12px;color:rgba(255,255,255,0.7);
+}
+.status-pill.ok{border-color:#3fb950;color:#3fb950;}
+.status-pill.err{border-color:#f85149;color:#f85149;}
+
+/* Bottom bar */
+.bottombar{
+  position:absolute;bottom:0;left:0;right:0;z-index:10;
+  padding:16px 24px calc(env(safe-area-inset-bottom,20px)+16px);
+  background:linear-gradient(to top,rgba(0,0,0,0.8),transparent);
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+}
+
+/* Capture button */
+.capture-btn{
+  width:74px;height:74px;border-radius:50%;
+  background:#fff;border:5px solid rgba(255,255,255,0.25);
+  cursor:pointer;position:relative;flex-shrink:0;
+  transition:transform .1s;-webkit-tap-highlight-color:transparent;
+}
+.capture-btn:active{transform:scale(0.91);}
+.capture-btn::after{content:'';position:absolute;inset:7px;border-radius:50%;background:#a78bfa;}
+.capture-btn.sending::after{background:#f0c040;animation:pulse 0.6s ease infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.5;}}
+
+/* Side buttons */
+.side-btn{
+  width:46px;height:46px;border-radius:50%;
+  background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);
+  color:#fff;font-size:20px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* Gallery fallback */
+.gallery-btn{
+  flex:1;text-align:right;
+  font-size:13px;color:rgba(255,255,255,0.5);cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* Flash effect */
+.flash{position:fixed;inset:0;background:#fff;z-index:999;opacity:0;pointer-events:none;transition:opacity 0.25s;}
+
+/* No camera fallback */
+#noCameraView{
+  display:none;position:fixed;inset:0;
+  background:#0d1117;flex-direction:column;
+  align-items:center;justify-content:center;padding:24px;text-align:center;
+}
+#noCameraView .logo2{font-size:24px;font-weight:700;margin-bottom:8px;}
+#noCameraView .logo2 span{color:#a78bfa;}
+#noCameraView p{font-size:13px;color:#8b949e;margin-bottom:24px;line-height:1.6;}
+.upload-zone{
+  width:100%;max-width:320px;border:1.5px dashed rgba(255,255,255,0.2);
+  border-radius:14px;min-height:180px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:10px;cursor:pointer;background:#161b22;
+}
+.upload-zone .icon{font-size:40px;}
+.upload-zone .lbl{font-size:15px;font-weight:600;}
+.upload-zone .sub{font-size:13px;color:#8b949e;}
+.send-btn{
+  width:100%;max-width:320px;margin-top:14px;padding:14px;
+  background:#7c3aed;border:none;border-radius:10px;
+  color:#fff;font-size:15px;font-weight:600;cursor:pointer;
+  font-family:inherit;display:none;
+}
+.fallback-status{font-size:13px;color:#8b949e;margin-top:14px;min-height:18px;}
+.fallback-status.ok{color:#3fb950;font-weight:600;}
+.fallback-status.err{color:#f85149;}
 </style>
 </head>
 <body>
-<div class="logo">Holo<span>Dex</span></div>
-<div class="sub">BossHog Gaming · Phone Upload</div>
 
-<div id="mainContent">
-  <div class="zone" id="zone" onclick="document.getElementById('fileIn').click()">
-    <div class="zone-icon">📷</div>
-    <div class="zone-label">Tap to take photo</div>
-    <div class="zone-sub">Point camera at your card</div>
-    <img id="preview" style="display:none;" alt=""/>
+<!-- Live camera view -->
+<div id="cameraView">
+  <video id="video" autoplay playsinline muted></video>
+  <div class="vignette"></div>
+  <div class="frame">
+    <div class="c tl"></div>
+    <div class="c tr"></div>
+    <div class="c bl"></div>
+    <div class="c br"></div>
+    <div class="scan-line"></div>
+    <div class="frame-label">Align card within frame</div>
   </div>
-  <div class="btns">
-    <button class="btn btn-cam" onclick="document.getElementById('camIn').click()">📸 Camera</button>
-    <button class="btn btn-send" id="sendBtn" disabled onclick="sendImage()">Send to Desktop →</button>
+  <div class="topbar">
+    <div class="logo">Holo<span>Dex</span></div>
+    <div class="status-pill" id="statusPill">Ready</div>
   </div>
-  <div class="prog-wrap" id="progWrap"><div class="prog-fill" id="progFill"></div></div>
-  <div class="status" id="status">Take a photo of your card to get started.</div>
+  <div class="bottombar">
+    <button class="side-btn" onclick="flipCamera()" title="Flip">🔄</button>
+    <button class="capture-btn" id="captureBtn" onclick="captureAndSend()"></button>
+    <div class="gallery-btn" onclick="document.getElementById('fileIn').click()">Gallery 🖼</div>
+  </div>
 </div>
 
-<input type="file" id="fileIn" accept="image/*" style="display:none" onchange="handleFile(this)"/>
-<input type="file" id="camIn" accept="image/*" capture="environment" style="display:none" onchange="handleFile(this)"/>
+<!-- No camera fallback -->
+<div id="noCameraView">
+  <div class="logo2">Holo<span>Dex</span></div>
+  <p>Camera not available.<br/>Upload a photo from your gallery instead.</p>
+  <div class="upload-zone" onclick="document.getElementById('fileIn').click()">
+    <div class="icon">📷</div>
+    <div class="lbl">Tap to upload</div>
+    <div class="sub">Choose from gallery</div>
+  </div>
+  <button class="send-btn" id="sendBtn" onclick="sendImage()">Send to Desktop →</button>
+  <div class="fallback-status" id="fallbackStatus"></div>
+</div>
+
+<div class="flash" id="flash"></div>
+<input type="file" id="fileIn" accept="image/*" style="display:none" onchange="handleFileSelect(this)"/>
+<canvas id="canvas" style="display:none;"></canvas>
 
 <script>
 const sessionId = new URLSearchParams(location.search).get('s');
+let stream = null;
+let facingMode = 'environment';
+let capturedB64 = null;
 
-if (!sessionId) {
-  document.getElementById('mainContent').innerHTML = '<div class="no-session">⚠️ Invalid or missing session ID.<br/><br/>Please go back to the desktop and click the 📱 button to generate a new QR code.</div>';
+async function init() {
+  if(!sessionId) {
+    showStatus('Invalid session — regenerate QR code on desktop', 'err');
+  }
+  try {
+    await startCamera();
+  } catch(e) {
+    // No camera — show fallback
+    document.getElementById('cameraView').style.display = 'none';
+    document.getElementById('noCameraView').style.display = 'flex';
+  }
 }
 
-let imgB64 = null;
+async function startCamera() {
+  if(stream) { stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode, width:{ideal:1920}, height:{ideal:1080} },
+    audio: false
+  });
+  const video = document.getElementById('video');
+  video.srcObject = stream;
+  await video.play();
+}
 
-function handleFile(input) {
-  const file = input.files[0]; if (!file) return;
+async function flipCamera() {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  await startCamera();
+}
+
+async function captureAndSend() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  // Flash
+  const flash = document.getElementById('flash');
+  flash.style.opacity = '0.85';
+  setTimeout(()=>{ flash.style.opacity='0'; }, 250);
+
+  capturedB64 = canvas.toDataURL('image/jpeg', 0.88).split(',')[1];
+  await sendImage();
+}
+
+function handleFileSelect(input) {
+  const file = input.files[0]; if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
-    imgB64 = e.target.result.split(',')[1];
-    document.getElementById('preview').src = e.target.result;
-    document.getElementById('preview').style.display = 'block';
-    document.querySelector('.zone-icon').style.display = 'none';
-    document.querySelector('.zone-label').style.display = 'none';
-    document.querySelector('.zone-sub').style.display = 'none';
-    document.getElementById('sendBtn').disabled = false;
-    document.getElementById('status').textContent = 'Photo ready — tap Send to Desktop';
-    document.getElementById('status').className = 'status';
+  reader.onload = async e => {
+    capturedB64 = e.target.result.split(',')[1];
+    // Show preview in fallback view
+    document.getElementById('sendBtn').style.display = 'block';
+    document.getElementById('fallbackStatus').textContent = 'Photo ready — tap Send to Desktop';
   };
   reader.readAsDataURL(file);
 }
 
 async function sendImage() {
-  if (!imgB64 || !sessionId) return;
-  const btn = document.getElementById('sendBtn');
-  btn.disabled = true; btn.textContent = 'Sending…';
-  const progWrap = document.getElementById('progWrap');
-  const progFill = document.getElementById('progFill');
-  progWrap.style.display = 'block'; progFill.style.width = '20%';
-  document.getElementById('status').textContent = 'Uploading photo…';
+  if(!capturedB64) return;
+  if(!sessionId) {
+    showStatus('No session ID — regenerate QR code', 'err');
+    setFallbackStatus('No session ID — regenerate QR code on desktop', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('captureBtn');
+  btn.classList.add('sending');
+  showStatus('Sending…', '');
 
   try {
-    progFill.style.width = '60%';
     const res = await fetch(`/.netlify/functions/upload-session?action=upload&id=${sessionId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: imgB64 })
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ imageBase64: capturedB64 })
     });
 
-    progFill.style.width = '100%';
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-      throw new Error(err.error || 'Upload failed');
+    if(res.ok) {
+      showStatus('✓ Sent! Check desktop', 'ok');
+      setFallbackStatus('✓ Sent! Switch to your desktop.', 'ok');
+      document.getElementById('sendBtn').textContent = '✓ Sent!';
+      btn.classList.remove('sending');
+    } else {
+      const d = await res.json().catch(()=>({}));
+      throw new Error(d.error || 'Upload failed ('+res.status+')');
     }
-
-    document.getElementById('status').textContent = '✓ Sent! Switch back to your desktop — it\'s scanning now.';
-    document.getElementById('status').className = 'status ok';
-    btn.textContent = '✓ Done!';
   } catch(e) {
-    document.getElementById('status').textContent = 'Error: ' + e.message;
-    document.getElementById('status').className = 'status err';
-    btn.disabled = false; btn.textContent = 'Retry →';
-    progFill.style.width = '0%';
+    showStatus('Error: ' + e.message, 'err');
+    setFallbackStatus('Error: ' + e.message, 'err');
+    btn.classList.remove('sending');
   }
 }
+
+function showStatus(msg, type) {
+  const el = document.getElementById('statusPill');
+  el.textContent = msg;
+  el.className = 'status-pill' + (type ? ' '+type : '');
+}
+function setFallbackStatus(msg, type) {
+  const el = document.getElementById('fallbackStatus');
+  el.textContent = msg;
+  el.className = 'fallback-status' + (type ? ' '+type : '');
+}
+
+init();
 </script>
 </body>
 </html>

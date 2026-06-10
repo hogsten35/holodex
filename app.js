@@ -230,66 +230,77 @@ async function fetchEbayPrices(query) {
     document.getElementById('priceSrc').textContent = 'eBay token failed — check Netlify env vars';
     return null;
   }
-  try {
-    // Use Browse API (available on all eBay developer accounts)
-    // Search for completed/sold listings
-    const q = encodeURIComponent(query);
-    const res = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${q}&limit=50&filter=conditionIds:%7B1000%7C1500%7C2000%7C2500%7C3000%7D&sort=endingSoonest`,
-      { headers: { 'Authorization': 'Bearer '+token, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', 'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=0' } }
-    );
-    const d = await res.json();
-    if(d.errors) {
-      const msg = d.errors[0]?.message || JSON.stringify(d.errors[0]);
-      document.getElementById('priceSrc').textContent = 'eBay: ' + msg;
-      console.warn('eBay Browse error:', msg);
-      return null;
-    }
-    const items = d.itemSummaries || [];
-    if(!items.length) return null;
 
-    // Group by condition
-    const results = {};
-    const condMap = { 'New': 'NM', '1000': 'NM', 'Like New': 'NM', 'Very Good': 'LP', '1500': 'LP', 'Good': 'MP', '2000': 'MP', 'Acceptable': 'HP', '3000': 'HP' };
-    items.forEach(item => {
-      const price = parseFloat(item.price?.value || 0);
-      if(!price) return;
-      const condLabel = item.condition || 'New';
-      const cond = condMap[condLabel] || condMap[item.conditionId] || 'NM';
-      if(!results[cond]) results[cond] = [];
-      results[cond].push(price);
-    });
+  // Build fallback queries from specific to broad
+  const cardName = currentCard?.name || query.split(' ').slice(0,3).join(' ');
+  const queries = [
+    query,                                          // full optimized query
+    `Pokemon ${cardName} holo`,                     // name + holo
+    `Pokemon ${cardName}`,                          // just name
+    cardName                                        // bare name
+  ];
 
-    const out = {};
-    Object.entries(results).forEach(([cond, prices]) => {
-      if(prices.length) out[cond] = {
-        avg: prices.reduce((a,b)=>a+b,0)/prices.length,
-        high: Math.max(...prices), low: Math.min(...prices), count: prices.length
+  for(const q of queries) {
+    try {
+      const res = await fetch(
+        `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(q)}&limit=50&category_ids=183454&sort=newlyListed`,
+        { headers: { 'Authorization': 'Bearer '+token, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', 'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=0' } }
+      );
+      const d = await res.json();
+      if(d.errors) { console.warn('eBay error:', d.errors[0]?.message); continue; }
+      const items = (d.itemSummaries || []).filter(i => parseFloat(i.price?.value) > 0);
+      if(!items.length) { console.log('No results for query:', q); continue; }
+
+      console.log(`eBay: ${items.length} results for "${q}"`);
+      document.getElementById('priceSrc').textContent = `eBay · ${items.length} listings`;
+
+      // Group by condition
+      const condMap = {
+        'New':'NM','Like New':'NM','1000':'NM',
+        'Very Good':'LP','1500':'LP',
+        'Good':'MP','2000':'MP','2500':'MP',
+        'Acceptable':'HP','3000':'HP',
+        'For parts or not working':'DMG','4000':'DMG'
       };
-    });
-    return Object.keys(out).length ? out : null;
-  } catch(e) {
-    console.warn('eBay fetch error:', e.message);
-    return null;
+      const groups = {};
+      items.forEach(item => {
+        const price = parseFloat(item.price?.value);
+        const cond = condMap[item.condition] || condMap[item.conditionId] || 'NM';
+        if(!groups[cond]) groups[cond] = [];
+        groups[cond].push(price);
+      });
+
+      const out = {};
+      Object.entries(groups).forEach(([cond, prices]) => {
+        out[cond] = { avg: prices.reduce((a,b)=>a+b,0)/prices.length, high: Math.max(...prices), low: Math.min(...prices), count: prices.length };
+      });
+      return Object.keys(out).length ? out : null;
+
+    } catch(e) { console.warn('eBay fetch error:', e.message); }
   }
+  document.getElementById('priceSrc').textContent = 'No eBay listings found';
+  return null;
 }
 
 async function fetchPriceHistory(query) {
-  // Price history uses Browse API too — returns current listings as price trend proxy
   const token = await getEbayToken(); if(!token) return null;
+  const cardName = currentCard?.name || query.split(' ').slice(0,3).join(' ');
   try {
     const res = await fetch(
-      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&limit=50&sort=newlyListed`,
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent('Pokemon ' + cardName)}&limit=50&category_ids=183454&sort=newlyListed`,
       {headers:{'Authorization':'Bearer '+token,'X-EBAY-C-MARKETPLACE-ID':'EBAY_US','X-EBAY-C-ENDUSERCTX':'affiliateCampaignId=0'}}
     );
     const d = await res.json();
-    const items = d.itemSummaries||[];
+    const items = (d.itemSummaries||[]).filter(i=>parseFloat(i.price?.value)>0);
+    // Spread items over past 90 days as a price trend proxy
     return items.map((item,i)=>({
-      date: new Date(Date.now() - i * 24*60*60*1000 * 3), // spread over last 90 days
-      price: parseFloat(item.price?.value||0)
-    })).filter(i=>i.price>0).reverse();
-  } catch(e){return null;}
+      date: new Date(Date.now() - (items.length-i) * (90/items.length) * 24*60*60*1000),
+      price: parseFloat(item.price?.value)
+    })).reverse();
+  } catch(e){ return null; }
 }
+
+
 
 async function fetchCardImage(card) {
   try {

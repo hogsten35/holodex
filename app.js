@@ -329,19 +329,19 @@ async function fetchEbayPrices(query) {
       document.getElementById('priceSrc').textContent = `eBay · ${items.length} listings`;
 
       // Group by condition
-      const condMap = {
-        'New':'NM','Like New':'NM','1000':'NM',
-        'Very Good':'LP','1500':'LP',
-        'Good':'MP','2000':'MP','2500':'MP',
-        'Acceptable':'HP','3000':'HP',
-        'For parts or not working':'DMG','4000':'DMG'
-      };
-      const groups = {};
+      // Pokemon TCG cards on eBay use "Ungraded" or "Like New" etc.
+      // Map all ungraded/general conditions to NM as base, price range covers all grades
+      const groups = { NM: [], LP: [], MP: [] };
       items.forEach(item => {
         const price = parseFloat(item.price?.value);
-        const cond = condMap[item.condition] || condMap[item.conditionId] || 'NM';
-        if(!groups[cond]) groups[cond] = [];
-        groups[cond].push(price);
+        if(!price || price > 5000) return; // skip outliers
+        const cond = (item.condition||'').toLowerCase();
+        const id = item.conditionId || '';
+        if(cond.includes('graded') || cond.includes('psa') || cond.includes('bgs')) return; // skip graded
+        if(cond === 'new' || cond === 'like new' || id === '1000' || cond === 'ungraded') groups.NM.push(price);
+        else if(cond.includes('very good') || id === '1500') groups.LP.push(price);
+        else if(cond.includes('good') || id === '2000' || id === '2500') groups.MP.push(price);
+        else groups.NM.push(price); // default everything else to NM bucket
       });
 
       const out = {};

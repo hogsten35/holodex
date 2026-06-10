@@ -273,6 +273,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .phi{color:var(--green);font-weight:600;}
 .plo{color:var(--red);font-weight:600;}
 .pm{color:var(--text3);font-size:12px;}
+.ebay-activity{display:none;margin:0 14px 12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--rs);background:rgba(255,255,255,.03);font-size:12px;color:var(--text2);line-height:1.45;}
+.ebay-activity strong{color:var(--text);}
+.ea-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+.ea-label{font-size:10px;font-weight:700;color:var(--purple2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
+.ea-note{font-size:11px;color:var(--text3);margin-top:2px;}
+.ea-pill{flex-shrink:0;padding:4px 8px;border-radius:999px;background:var(--purple-bg);color:var(--purple2);font-size:11px;font-weight:700;}
 
 .chart-sec{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;}
 .chart-head{padding:11px 16px 10px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
@@ -641,7 +647,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
           <div class="price-sec-head"><span class="sec-label">Price by Condition</span><span id="priceSrc" style="font-size:11px;color:var(--text3);"></span></div>
           <div id="priceBody">
             <div class="spin-row" id="priceSpinner"><div class="spin"></div> Fetching prices…</div>
-            <table class="price-table" id="priceTable" style="display:none;"><thead><tr><th>Condition</th><th>Avg Sold</th><th>High</th><th>Low</th><th>Sales</th></tr></thead><tbody id="priceTbody"></tbody></table>
+            <table class="price-table" id="priceTable" style="display:none;"><thead><tr><th>Condition</th><th>Avg Listing</th><th>High</th><th>Low</th><th>Listings</th></tr></thead><tbody id="priceTbody"></tbody></table>
+            <div class="ebay-activity" id="ebayActivity"></div>
             <div class="no-keys" id="noKeys">eBay pricing is not available yet. Check Netlify environment variables.</div>
           </div>
         </div>
@@ -760,7 +767,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <h3>eBay API — Market Pricing</h3>
         <div class="ebay-info-box">
           <strong>eBay pricing is enabled server-side.</strong><br/>
-          Current eBay market listings are pulled automatically when you scan a card. No keys needed here — they are securely stored on the server.
+          Current eBay market listings and newest listing activity are pulled automatically when you scan a card. No keys needed here — they are securely stored on the server.
         </div>
         <div id="ebayStatus" class="ebay-status-msg" style="display:none;"></div>
         <button class="test-ebay-btn" onclick="testEbayKeys()">Test eBay Connection</button>
@@ -779,7 +786,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
       <div class="settings-sec">
         <h3>About</h3>
-        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.0</span></div>
+        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.1</span></div>
       </div>
     </div>
 

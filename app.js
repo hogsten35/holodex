@@ -390,6 +390,74 @@ function aggregatePrices(items) {
   return Object.keys(out).length ? out : null;
 }
 
+function getEbayListingDate(item) {
+  const raw = item?.itemCreationDate || item?.itemOriginDate || item?.itemEndDate || item?.marketingPrice?.priceTreatmentDate;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatActivityDate(dateLike) {
+  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function buildEbayActivity(items, totalChecked = 0) {
+  const dated = items
+    .map(item => ({ item, date: getEbayListingDate(item) }))
+    .filter(x => x.date)
+    .sort((a,b) => b.date - a.date);
+
+  const latest = dated[0] || null;
+  return {
+    latestListingDate: latest ? latest.date.toISOString() : null,
+    latestListingLabel: latest ? formatActivityDate(latest.date) : null,
+    latestListingTitle: latest?.item?.title || null,
+    matchCount: items.length,
+    totalChecked,
+    checkedAt: new Date().toISOString(),
+    note: 'Active eBay market listings, not completed sold comps'
+  };
+}
+
+function ensureEbayActivityEl() {
+  let el = document.getElementById('ebayActivity');
+  if (el) return el;
+  const table = document.getElementById('priceTable');
+  if (!table || !table.parentNode) return null;
+  el = document.createElement('div');
+  el.id = 'ebayActivity';
+  el.className = 'ebay-activity';
+  table.parentNode.insertBefore(el, table.nextSibling);
+  return el;
+}
+
+function renderEbayActivity(activity) {
+  const el = ensureEbayActivityEl();
+  if (!el) return;
+  if (!activity || !activity.matchCount) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+
+  const dateLine = activity.latestListingLabel
+    ? `Latest listing seen: <strong>${activity.latestListingLabel}</strong>`
+    : 'Latest listing date not provided by eBay';
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="ea-top">
+      <div>
+        <div class="ea-label">eBay Activity</div>
+        <div>${dateLine}</div>
+        <div class="ea-note">Active listings only — not completed sold comps.</div>
+      </div>
+      <div class="ea-pill">${activity.matchCount} matches</div>
+    </div>`;
+}
+
 async function callEbaySearch(query, limit = 50) {
   const res = await fetch('/.netlify/functions/ebay-search', {
     method: 'POST',
@@ -432,7 +500,9 @@ async function fetchEbayPrices(query) {
       const items = rawItems.filter(item => titleLooksRelevant(item.title, cardName));
       const prices = aggregatePrices(items);
       if (prices) {
-        if(srcEl) srcEl.textContent = `eBay market listings · ${items.length} matches`;
+        prices._activity = buildEbayActivity(items, rawItems.length);
+        const newest = prices._activity.latestListingLabel ? ` · newest ${prices._activity.latestListingLabel}` : '';
+        if(srcEl) srcEl.textContent = `eBay market listings · ${items.length} matches${newest}`;
         return prices;
       }
     } catch(e) {
@@ -783,6 +853,7 @@ function showScanResults(prices,history) {
 function renderPriceTable(prices) {
   document.getElementById('priceSpinner').style.display='none';
   if(!prices){
+    renderEbayActivity(null);
     document.getElementById('priceTable').style.display='none';
     document.getElementById('noKeys').textContent='No eBay listings found for this card yet. Try manual search with the card number/set.';
     document.getElementById('noKeys').style.display='block';
@@ -790,6 +861,7 @@ function renderPriceTable(prices) {
   }
   document.getElementById('noKeys').style.display='none';
   document.getElementById('priceTable').style.display='table';
+  renderEbayActivity(prices._activity);
   document.getElementById('priceTbody').innerHTML=CONDITIONS.map(c=>{
     const p=prices[c];
     if(!p) return `<tr><td><span class="badge badge-${c.toLowerCase()}">${c}</span></td><td colspan="4" class="pm">No data</td></tr>`;

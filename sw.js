@@ -1,34 +1,35 @@
-const CACHE = 'holodex-v1';
-const SHELL = ['/', '/index.html', '/app.js', '/manifest.json'];
+const CACHE = 'holodex-v2';
+const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/scan-phone.html'];
 
-self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
   self.skipWaiting();
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(keys =>
-    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
-  ));
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+  );
   self.clients.claim();
 });
 
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET') return;
-  const url = new URL(e.request.url);
-  // Always network-first for API calls
-  if (url.hostname.includes('api.')) {
-    e.respondWith(fetch(e.request).catch(() => new Response('', { status: 503 })));
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+
+  // Never cache live API/function calls. This keeps QR polling and news fresh.
+  if (url.pathname.startsWith('/.netlify/functions/') || url.pathname.startsWith('/api/') || url.hostname.includes('api.')) {
+    event.respondWith(fetch(event.request).catch(() => new Response('', { status: 503 })));
     return;
   }
-  // Cache-first for app shell
-  e.respondWith(
-    caches.match(e.request).then(cached =>
-      cached || fetch(e.request).then(res => {
-        const clone = res.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-        return res;
-      })
-    )
+
+  // Network-first for app files so updates deploy cleanly, cache fallback for offline use.
+  event.respondWith(
+    fetch(event.request).then(response => {
+      const clone = response.clone();
+      caches.open(CACHE).then(cache => cache.put(event.request, clone));
+      return response;
+    }).catch(() => caches.match(event.request))
   );
 });

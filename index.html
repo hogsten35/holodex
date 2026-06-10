@@ -488,6 +488,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .flip-cam-btn{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.12);
   border:none;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 
+.coll-remove-btn{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(248,81,73,0.85);border:none;color:#fff;font-size:11px;cursor:pointer;display:none;align-items:center;justify-content:center;line-height:1;z-index:2;}
+.coll-item:hover .coll-remove-btn{display:flex;}
+.remove-list-btn{background:var(--red-bg);border:1px solid rgba(248,81,73,.2);border-radius:6px;padding:4px 10px;color:var(--red);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:var(--fb);}
+.remove-list-btn:hover{background:var(--red);color:#fff;}
+.top-card-item{flex-shrink:0;width:90px;cursor:pointer;}
+.top-card-item img{width:100%;aspect-ratio:2.5/3.5;object-fit:cover;border-radius:var(--rs);display:block;border:1px solid var(--border);}
+.top-card-name{font-size:10px;font-weight:600;color:var(--text);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.top-card-price{font-size:11px;color:var(--green);font-weight:700;margin-top:1px;}
+
 /* TOAST */
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:11px 20px;border-radius:22px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.5);}
 </style>
@@ -520,6 +529,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
           <div class="val-stat"><div class="v" id="heroSets">0</div><div class="l">Sets</div></div>
           <div class="val-stat"><div class="v" id="heroTop">—</div><div class="l">Top Card</div></div>
         </div>
+      </div>
+
+      <!-- Value history chart -->
+      <div id="valueChartWrap" style="display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;margin-bottom:4px;">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;">Collection Value History</div>
+        <div style="position:relative;height:80px;"><canvas id="valueChartCanvas"></canvas></div>
+      </div>
+
+      <!-- Top cards in collection -->
+      <div id="topCardsSection" style="display:none;">
+        <div class="sec-head"><h2>💎 Most Valuable</h2></div>
+        <div class="chase-scroll" id="topCardsRow"></div>
       </div>
 
       <div class="sec-head"><h2>🔥 Chase Cards</h2><a onclick="showPage('sets')">Browse sets →</a></div>
@@ -717,6 +738,16 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
     </div>
 
+    <!-- ═══════ WISHLIST PAGE ═══════ -->
+    <div class="page" id="page-wishlist">
+      <div class="sec-head">
+        <h2>🎯 Wishlist</h2>
+        <span id="wishCount" style="font-size:13px;color:var(--text2);">0 cards</span>
+      </div>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5;">Cards you're hunting for. Browse any set and tap <strong>Want</strong> on a card to add it here.</p>
+      <div id="wishlistContent"></div>
+    </div>
+
     <!-- ═══════ SETTINGS PAGE ═══════ -->
     <div class="page" id="page-settings">
       <div class="settings-topbar">
@@ -734,7 +765,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
       <div class="settings-sec">
         <h3>Collection</h3>
-        <div class="settings-row tap" onclick="exportCollection()"><div><div class="sl">Export Collection</div><div class="ss">Download JSON backup</div></div><span class="sarr">›</span></div>
+        <div class="settings-row tap" onclick="exportCollection()"><div><div class="sl">Export as JSON</div><div class="ss">Full backup with all data</div></div><span class="sarr">›</span></div>
+        <div class="settings-row tap" onclick="exportCSV()"><div><div class="sl">Export as CSV</div><div class="ss">Open in Excel or Sheets</div></div><span class="sarr">›</span></div>
         <div class="settings-row tap" onclick="document.getElementById('importFile').click()"><div><div class="sl">Import Collection</div><div class="ss">Restore from JSON</div></div><span class="sarr">›</span></div>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importCollection(this)"/>
         <div class="settings-row tap" onclick="clearCollection()"><div><div class="sl" style="color:var(--red)">Clear Collection</div><div class="ss">Remove all cards</div></div><span class="sarr">›</span></div>
@@ -768,6 +800,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     <button class="nav-btn" id="nav-sets" onclick="showPage('sets')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="18" rx="1"/><rect x="16" y="3" width="6" height="18" rx="1"/></svg>
       Sets
+    </button>
+    <button class="nav-btn" id="nav-wishlist" onclick="showPage('wishlist')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+      Wishlist
     </button>
     <button class="nav-btn" id="nav-pack" onclick="showPage('pack')">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27,6.96 12,12.01 20.73,6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
@@ -805,6 +841,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <option value="MP">Mod. Played</option><option value="HP">Heavily Played</option>
         <option value="DMG">Damaged</option>
       </select>
+      <button class="btn btn-ghost btn-sm" id="modalWantBtn" title="Add to wishlist">🎯 Want</button>
       <button class="btn btn-primary" id="modalAddBtn">+ Add</button>
     </div>
   </div>

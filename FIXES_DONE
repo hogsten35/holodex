@@ -1,0 +1,32 @@
+# HoloDex polish pass
+
+## Fixed
+
+- Repaired broken `app.js` syntax caused by unfinished `fetchEbayPrices()`.
+- Removed browser-side eBay token dependency from the front end.
+- Added server-side eBay test flow using `/.netlify/functions/ebay-debug`.
+- Added working `fetchEbayPrices()` that calls `/.netlify/functions/ebay-search`.
+- Added listing filtering, condition inference, and average/low/high/count aggregation.
+- Added `fetchPriceHistory()` fallback so charts render without crashing.
+- Updated settings text from sold-prices wording to market-pricing wording.
+- Moved icons into `/icons/` to match `manifest.json` and Apple touch icon paths.
+- Moved functions into `/netlify/functions/` for Netlify deployment.
+- Updated the service worker to `holodex-v2` and prevented Netlify function calls from being cached.
+- Compressed QR phone scanner uploads before sending to Upstash.
+- Updated README with all required Netlify environment variables.
+- Added `ANTHROPIC_MODEL` optional override in `identify.js`.
+
+## Verified locally
+
+- `node --check app.js`
+- `node --check sw.js`
+- `node --check netlify/functions/*.js`
+- Extracted and checked the JavaScript inside `scan-phone.html`
+
+## Deploy notes
+
+1. Replace the files in your GitHub repo with this folder structure.
+2. Commit and push to `main`.
+3. In Netlify, trigger a fresh deploy.
+4. After deploy, go to Settings → Test eBay Connection.
+5. On phone, if the installed PWA still shows the old version, remove it from the home screen and add it again. The service worker cache name was bumped, but reinstalling clears stubborn iOS cache issues.

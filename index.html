@@ -617,7 +617,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
             <div class="scan-step"><div class="step-icon wait" id="si0">1</div><div><div class="step-title wait" id="st0">Processing image</div><div class="step-sub" id="ss0">Preparing card photo</div></div></div>
             <div class="scan-step"><div class="step-icon wait" id="si1">2</div><div><div class="step-title wait" id="st1">Analyzing details &amp; labels</div><div class="step-sub" id="ss1">Reading set, number, rarity</div></div></div>
             <div class="scan-step"><div class="step-icon wait" id="si2">3</div><div><div class="step-title wait" id="st2">Searching global records</div><div class="step-sub" id="ss2">Matching card database</div></div></div>
-            <div class="scan-step"><div class="step-icon wait" id="si3">4</div><div><div class="step-title wait" id="st3">Getting value estimate</div><div class="step-sub" id="ss3">Fetching recent sold prices</div></div></div>
+            <div class="scan-step"><div class="step-icon wait" id="si3">4</div><div><div class="step-title wait" id="st3">Getting value estimate</div><div class="step-sub" id="ss3">Fetching market listings</div></div></div>
           </div>
           <button style="width:100%;padding:12px;background:transparent;border:1px solid var(--border2);border-radius:var(--rs);color:var(--text2);font-size:14px;font-weight:500;cursor:pointer;font-family:var(--fb);" onclick="cancelScan()">Cancel</button>
         </div>
@@ -640,7 +640,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
           <div id="priceBody">
             <div class="spin-row" id="priceSpinner"><div class="spin"></div> Fetching prices…</div>
             <table class="price-table" id="priceTable" style="display:none;"><thead><tr><th>Condition</th><th>Avg Sold</th><th>High</th><th>Low</th><th>Sales</th></tr></thead><tbody id="priceTbody"></tbody></table>
-            <div class="no-keys" id="noKeys">Add eBay keys in Settings for real sold prices.</div>
+            <div class="no-keys" id="noKeys">eBay pricing is not available yet. Check Netlify environment variables.</div>
           </div>
         </div>
         <div class="chart-sec">
@@ -755,10 +755,10 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <button class="settings-back-btn" onclick="showPage('home')">&#8592; Back</button>
       </div>
       <div class="settings-sec">
-        <h3>eBay API — Real Sold Prices</h3>
+        <h3>eBay API — Market Pricing</h3>
         <div class="ebay-info-box">
           <strong>eBay pricing is enabled server-side.</strong><br/>
-          Real sold prices are pulled automatically when you scan a card. No keys needed here — they are securely stored on the server.
+          Current eBay market listings are pulled automatically when you scan a card. No keys needed here — they are securely stored on the server.
         </div>
         <div id="ebayStatus" class="ebay-status-msg" style="display:none;"></div>
         <button class="test-ebay-btn" onclick="testEbayKeys()">Test eBay Connection</button>
@@ -777,7 +777,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
       <div class="settings-sec">
         <h3>About</h3>
-        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Claude Vision + eBay API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.0</span></div>
+        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.0</span></div>
       </div>
     </div>
 

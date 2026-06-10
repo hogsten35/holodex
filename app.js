@@ -161,31 +161,37 @@ function getCardPrice(card) {
 async function loadNews() {
   const el = document.getElementById('newsFeed');
   try {
-    const res = await fetch('/.netlify/functions/news');
+    const res = await fetch('/.netlify/functions/news?ts=' + Date.now(), { cache: 'no-store' });
+    if(!res.ok) throw new Error('news function returned ' + res.status);
+
     const text = await res.text();
     const parser = new DOMParser();
     const xml = parser.parseFromString(text, 'text/xml');
+    const parseError = xml.querySelector('parsererror');
+    if(parseError) throw new Error('news XML could not be parsed');
+
+    const channelTitle = xml.querySelector('channel > title')?.textContent?.trim() || 'TCG News';
     const items = Array.from(xml.querySelectorAll('item')).slice(0,6);
-    if(!items.length) throw new Error('no items');
+    if(!items.length) throw new Error('no news items');
+
     el.innerHTML = items.map(item=>{
-      const title = item.querySelector('title')?.textContent||'';
-      const link = item.querySelector('link')?.textContent||'#';
-      const date = item.querySelector('pubDate')?.textContent||'';
+      const title = item.querySelector('title')?.textContent?.trim() || 'Untitled update';
+      const link = item.querySelector('link')?.textContent?.trim() || '#';
+      const source = item.querySelector('source')?.textContent?.trim() || channelTitle;
+      const date = item.querySelector('pubDate')?.textContent?.trim() || '';
       const d = date ? new Date(date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
-      return `<div class="news-item" onclick="openLink('${link}')">
+      const safeLink = link.replace(/'/g, "\'");
+      return `<div class="news-item" onclick="openLink('${safeLink}')">
         <div class="news-dot"></div>
-        <div><div class="news-title">${title}</div><div class="news-src">PokéBeach · ${d}</div></div>
+        <div><div class="news-title">${title}</div><div class="news-src">${source}${d ? ' · ' + d : ''}</div></div>
       </div>`;
     }).join('');
   } catch(e) {
-    // Fallback static headlines
-    el.innerHTML = [
-      ['New Stellar Crown Set Revealed for 2025','PokéBeach'],
-      ['Charizard ex 151 Reaches All-Time High on TCGPlayer','TCG News'],
-      ['Pokémon TCG Championship Season Dates Announced','Play Pokémon'],
-      ['Prismatic Evolutions Reprint Coming Q3','PokéBeach'],
-      ['Mew ex 151 SIR Surges 40% in Past Month','TCG Market'],
-    ].map(([t,s])=>`<div class="news-item"><div class="news-dot"></div><div><div class="news-title">${t}</div><div class="news-src">${s}</div></div></div>`).join('');
+    console.warn('News load failed:', e.message);
+    el.innerHTML = `<div class="news-item">
+      <div class="news-dot"></div>
+      <div><div class="news-title">TCG news could not load right now</div><div class="news-src">Check Netlify function logs for /.netlify/functions/news</div></div>
+    </div>`;
   }
 }
 

@@ -149,6 +149,80 @@ async function loadNews() {
 
 function openLink(url) { window.open(url, '_blank', 'noopener'); }
 
+// ── LIVE CAMERA ──────────────────────────────────────────
+let cameraStream = null;
+let facingMode = 'environment'; // rear camera by default
+
+async function openCamera() {
+  const scanner = document.getElementById('cameraScanner');
+  scanner.classList.add('active');
+  await startCamera();
+}
+
+async function startCamera() {
+  // Stop any existing stream
+  if(cameraStream) { cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 }, aspectRatio: { ideal: 16/9 } },
+      audio: false
+    });
+    cameraStream = stream;
+    const video = document.getElementById('cameraVideo');
+    video.srcObject = stream;
+    await video.play();
+  } catch(err) {
+    console.warn('Camera error:', err.message);
+    // Fall back to file input if camera not available
+    closeCamera();
+    document.getElementById('fileIn').click();
+    toast('Camera unavailable — use Gallery instead');
+  }
+}
+
+async function flipCamera() {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  await startCamera();
+}
+
+function closeCamera() {
+  if(cameraStream) { cameraStream.getTracks().forEach(t=>t.stop()); cameraStream=null; }
+  document.getElementById('cameraScanner').classList.remove('active');
+}
+
+function capturePhoto() {
+  const video = document.getElementById('cameraVideo');
+  const canvas = document.getElementById('captureCanvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  // Flash effect
+  const flash = document.createElement('div');
+  flash.style.cssText = 'position:fixed;inset:0;background:#fff;z-index:9999;opacity:0.8;pointer-events:none;transition:opacity 0.3s;';
+  document.body.appendChild(flash);
+  setTimeout(()=>{ flash.style.opacity='0'; setTimeout(()=>flash.remove(),300); },50);
+
+  // Get the image
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  closeCamera();
+
+  // Show preview and trigger scan
+  imgB64 = dataUrl.split(',')[1];
+  const img = document.getElementById('previewImg');
+  img.src = dataUrl;
+  img.style.display = 'block';
+  document.querySelector('.sz-icon').style.display = 'none';
+  document.querySelector('.sz-label').style.display = 'none';
+  document.querySelector('.sz-sub').style.display = 'none';
+  document.getElementById('szChange').style.display = 'block';
+  document.getElementById('resultArea').classList.remove('show');
+  document.getElementById('errBox').classList.remove('show');
+
+  // Auto-trigger scan
+  setTimeout(()=>scanCard(), 300);
+}
+
 // ── FILE HANDLING ─────────────────────────────────────────
 let imgB64 = null;
 function triggerUpload() { document.getElementById('fileIn').click(); }

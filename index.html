@@ -426,6 +426,68 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .test-ebay-btn{display:block;width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--rs);padding:12px;color:var(--text2);font-size:14px;font-weight:600;font-family:var(--fb);cursor:pointer;margin-top:8px;text-align:center;}
 .test-ebay-btn:hover{background:var(--bg4);color:var(--text);}
 
+/* ═══════════ LIVE CAMERA SCANNER ═══════════ */
+.camera-scanner{position:fixed;inset:0;z-index:250;background:#000;display:none;flex-direction:column;}
+.camera-scanner.active{display:flex;}
+.camera-viewport{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+.camera-viewport video{width:100%;height:100%;object-fit:cover;display:block;}
+
+/* Dark overlay with card-shaped cutout */
+.camera-overlay{position:absolute;inset:0;z-index:2;pointer-events:none;}
+.camera-overlay canvas{position:absolute;inset:0;width:100%;height:100%;}
+
+/* Corner marks on live view */
+.live-corners{position:absolute;z-index:3;pointer-events:none;
+  width:min(75vw,260px);aspect-ratio:2.5/3.5;
+  top:50%;left:50%;transform:translate(-50%,-55%);}
+.lc{position:absolute;width:32px;height:32px;}
+.lc::before,.lc::after{content:'';position:absolute;border-color:#a78bfa;border-style:solid;border-radius:2px;}
+.lc::before{width:100%;height:0;border-width:3px 0 0 0;}
+.lc::after{width:0;height:100%;border-width:0 0 0 3px;}
+.lc.tr::before{border-width:3px 0 0 0;right:0;}
+.lc.tr::after{border-width:0 3px 0 0;right:0;top:0;}
+.lc.bl::before{border-width:0 0 3px 0;bottom:0;}
+.lc.bl::after{border-width:0 0 0 3px;bottom:0;}
+.lc.br::before{border-width:0 0 3px 0;bottom:0;right:0;}
+.lc.br::after{border-width:0 3px 0 0;bottom:0;right:0;}
+.lc.tl{top:0;left:0;}
+.lc.tr{top:0;right:0;}
+.lc.bl{bottom:0;left:0;}
+.lc.br{bottom:0;right:0;}
+
+/* Live scan line */
+.live-scan-line{position:absolute;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,#a78bfa,#7c3aed,#a78bfa,transparent);
+  box-shadow:0 0 10px 2px rgba(124,58,237,0.7);
+  animation:liveScan 2s ease-in-out infinite;z-index:4;}
+@keyframes liveScan{0%{top:0;opacity:0;}8%{opacity:1;}92%{opacity:1;}100%{top:100%;opacity:0;}}
+
+/* Guide text */
+.camera-guide{position:absolute;bottom:-32px;left:0;right:0;text-align:center;
+  font-size:12px;font-weight:600;color:#a78bfa;letter-spacing:0.06em;text-transform:uppercase;}
+
+/* Camera top bar */
+.camera-topbar{position:absolute;top:0;left:0;right:0;z-index:10;
+  padding:52px 20px 14px;
+  background:linear-gradient(to bottom,rgba(0,0,0,0.7),transparent);
+  display:flex;align-items:center;justify-content:space-between;}
+.camera-topbar-title{font-family:var(--fh);font-size:15px;font-weight:700;color:#fff;}
+.camera-topbar-title span{color:#a78bfa;}
+.camera-close-btn{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.15);
+  border:none;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
+/* Camera bottom bar */
+.camera-bottom{flex-shrink:0;background:rgba(0,0,0,0.85);backdrop-filter:blur(12px);
+  padding:20px 24px calc(env(safe-area-inset-bottom,16px)+16px);
+  display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.capture-btn{width:72px;height:72px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,0.3);
+  cursor:pointer;flex-shrink:0;position:relative;transition:transform .1s;}
+.capture-btn:active{transform:scale(0.93);}
+.capture-btn::after{content:'';position:absolute;inset:6px;border-radius:50%;background:#a78bfa;}
+.camera-hint{font-size:12px;color:rgba(255,255,255,0.5);text-align:center;flex:1;}
+.flip-cam-btn{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.12);
+  border:none;color:#fff;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
 /* TOAST */
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:11px 20px;border-radius:22px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.5);}
 </style>
@@ -480,12 +542,11 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <div class="sz-change" id="szChange">Tap to change photo</div>
       </div>
       <div class="btn-row">
-        <button class="btn btn-ghost" onclick="document.getElementById('camIn').click()">📸 Camera</button>
+        <button class="btn btn-ghost" onclick="openCamera()">📸 Camera</button>
         <button class="btn btn-ghost" onclick="document.getElementById('fileIn').click()">🖼 Gallery</button>
         <button class="btn btn-primary" onclick="scanCard()">Identify</button>
       </div>
       <input type="file" id="fileIn" accept="image/*" style="display:none" onchange="handleFile(this)"/>
-      <input type="file" id="camIn" accept="image/*" capture="environment" style="display:none" onchange="handleFile(this)"/>
 
       <div class="manual-toggle" onclick="toggleManual()">✏️ Type card details instead</div>
       <div class="manual-area" id="manualArea">
@@ -748,6 +809,39 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
     </div>
   </div>
 </div>
+
+<!-- LIVE CAMERA SCANNER -->
+<div class="camera-scanner" id="cameraScanner">
+  <div class="camera-viewport" id="cameraViewport">
+    <video id="cameraVideo" autoplay playsinline muted></video>
+
+    <!-- Card frame overlay with corners -->
+    <div class="live-corners" id="liveCorners">
+      <div class="lc tl"></div>
+      <div class="lc tr"></div>
+      <div class="lc bl"></div>
+      <div class="lc br"></div>
+      <div class="live-scan-line"></div>
+      <div class="camera-guide">Align card within frame</div>
+    </div>
+  </div>
+
+  <!-- Top bar -->
+  <div class="camera-topbar">
+    <div class="camera-topbar-title">Holo<span>Dex</span></div>
+    <button class="camera-close-btn" onclick="closeCamera()">✕</button>
+  </div>
+
+  <!-- Bottom controls -->
+  <div class="camera-bottom">
+    <button class="flip-cam-btn" onclick="flipCamera()" title="Flip camera">🔄</button>
+    <button class="capture-btn" id="captureBtn" onclick="capturePhoto()"></button>
+    <div class="camera-hint">Tap the button<br/>to scan card</div>
+  </div>
+</div>
+
+<!-- hidden canvas for capture -->
+<canvas id="captureCanvas" style="display:none;"></canvas>
 
 <!-- QR MODAL -->
 <div class="qr-modal-wrap" id="qrModalWrap">

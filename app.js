@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════
-//  HoloDex v3  |  BossHog Gaming  |  app.js
+//  HoloDex v3.1  |  BossHog Gaming  |  app.js
 // ═══════════════════════════════════════════
 
 // ── STATE ────────────────────────────────────────────────
@@ -13,6 +13,12 @@ let ebayToken = null, ebayTokenExp = 0;
 let scanAborted = false;
 let qrPollTimer = null;
 
+// ── CLOUD SYNC STATE ─────────────────────────────────────
+let cloudSaveCode = localStorage.getItem('holodex_cloud_code') || '';
+let cloudSyncTimer = null;
+let cloudSyncMuted = false;
+let cloudSyncInFlight = false;
+
 const CONDITIONS = ['NM','LP','MP','HP','DMG'];
 const EBAY_COND = { NM:'1000', LP:'1500', MP:'2000', HP:'3000', DMG:'4000' };
 
@@ -22,6 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderCollection();
   loadSets();
   loadHome();
+  initCloudSync();
 });
 
 // ── KEYS — stored server-side in Netlify env vars ────────
@@ -75,6 +82,7 @@ function showPage(name) {
   if(name==='collection') renderCollection();
   if(name==='home') renderHomeStats();
   if(name==='wishlist') renderWishlist();
+  if(name==='settings') renderCloudSyncStatus();
 }
 
 // ── HOME ─────────────────────────────────────────────────
@@ -1168,8 +1176,14 @@ function saveCollection(){
   valueHistory.push({date:today,value:total});
   if(valueHistory.length>365) valueHistory=valueHistory.slice(-365);
   localStorage.setItem('holodex_value_history',JSON.stringify(valueHistory));
+  markLocalSave();
+  scheduleCloudSync();
 }
-function saveWishlist(){localStorage.setItem('holodex_wishlist',JSON.stringify(wishlist));}
+function saveWishlist(){
+  localStorage.setItem('holodex_wishlist',JSON.stringify(wishlist));
+  markLocalSave();
+  scheduleCloudSync();
+}
 
 // ── COLLECTION ────────────────────────────────────────────
 let currentCollView = 'grid';
@@ -1494,6 +1508,242 @@ async function showQRModal(){
   }
 }
 function closeQRModal(){clearInterval(qrPollTimer);document.getElementById('qrModalWrap').classList.remove('open');}
+
+
+// ── CLOUD SYNC ────────────────────────────────────────────
+function initCloudSync(){
+  renderCloudSyncStatus();
+  if(cloudSaveCode){
+    setTimeout(()=>cloudPull({silent:true, auto:true}), 900);
+  }
+}
+
+function normalizeCloudCode(code){
+  return String(code||'').trim().toUpperCase().replace(/\s+/g,'').replace(/[^A-Z0-9-]/g,'');
+}
+
+function markLocalSave(){
+  if(cloudSyncMuted) return localStorage.getItem('holodex_last_save') || '';
+  const now = new Date().toISOString();
+  localStorage.setItem('holodex_last_save', now);
+  renderCloudSyncStatus();
+  return now;
+}
+
+function buildCloudPayload(){
+  return {
+    app: 'HoloDex',
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    collection,
+    wishlist,
+    valueHistory
+  };
+}
+
+function renderCloudSyncStatus(message){
+  const box = document.getElementById('cloudSyncBox');
+  const status = document.getElementById('cloudStatus');
+  const copyRow = document.getElementById('cloudCopyRow');
+  const codeText = document.getElementById('cloudCodeText');
+  if(!box || !status) return;
+
+  if(cloudSaveCode){
+    box.innerHTML = `<strong>Cloud Sync is connected.</strong><br/>Your collection saves to your private cloud save code. Keep this code safe — anyone with the code can load that collection.`;
+    status.style.display = 'block';
+    const last = localStorage.getItem('holodex_cloud_updated') || localStorage.getItem('holodex_last_save') || '';
+    const lastTxt = last ? new Date(last).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'Not synced yet';
+    status.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--green);';
+    status.textContent = message || `✓ Connected · Last sync: ${lastTxt}`;
+    if(copyRow) copyRow.style.display = 'flex';
+    if(codeText) codeText.textContent = cloudSaveCode;
+  } else {
+    box.innerHTML = `<strong>Cloud Sync is off.</strong><br/>Create a free cloud save code so cards auto-save online and can be opened on another device without importing files.`;
+    status.style.display = message ? 'block' : 'none';
+    if(message){
+      status.style.cssText = 'display:block;font-size:13px;padding:8px 4px;color:var(--text2);';
+      status.textContent = message;
+    }
+    if(copyRow) copyRow.style.display = 'none';
+    if(codeText) codeText.textContent = '—';
+  }
+}
+
+function setCloudStatus(text, kind='info'){
+  const status = document.getElementById('cloudStatus');
+  if(!status) return;
+  const color = kind === 'ok' ? 'var(--green)' : kind === 'err' ? 'var(--red)' : 'var(--text2)';
+  status.style.cssText = `display:block;font-size:13px;padding:8px 4px;color:${color};`;
+  status.textContent = text;
+}
+
+function scheduleCloudSync(){
+  if(cloudSyncMuted || !cloudSaveCode) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(()=>cloudPush({silent:true}), 1400);
+}
+
+async function cloudRequest(payload){
+  const res = await fetch('/.netlify/functions/cloud-save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok || data.error) throw new Error(data.error || `Cloud sync failed (${res.status})`);
+  return data;
+}
+
+async function createCloudSave(){
+  if(cloudSaveCode && !confirm('You already have a cloud save code connected. Create a new one anyway?')) return;
+  try{
+    setCloudStatus('Creating cloud save…');
+    const data = await cloudRequest({ action:'create', data: buildCloudPayload() });
+    cloudSaveCode = data.code;
+    localStorage.setItem('holodex_cloud_code', cloudSaveCode);
+    localStorage.setItem('holodex_cloud_updated', data.updatedAt || new Date().toISOString());
+    renderCloudSyncStatus('✓ Cloud save created and synced.');
+    copyCloudCode(false);
+    alert('Your HoloDex Cloud Save Code:\n\n' + cloudSaveCode + '\n\nSave this code somewhere safe. You can use it to open this collection on another device.');
+  }catch(e){
+    setCloudStatus('✗ '+e.message, 'err');
+  }
+}
+
+async function connectCloudSave(){
+  const entered = prompt('Enter your HoloDex Cloud Save Code:');
+  const code = normalizeCloudCode(entered);
+  if(!code) return;
+  try{
+    setCloudStatus('Checking cloud save…');
+    const res = await cloudRequest({ action:'load', code });
+    const remote = res.data || {};
+    const localCount = collection.length + wishlist.length;
+    const remoteCount = (remote.collection?.length || 0) + (remote.wishlist?.length || 0);
+    let merge = false;
+    if(localCount && remoteCount){
+      merge = confirm(`This device has ${collection.length} collection cards and the cloud save has ${remote.collection?.length || 0}.\n\nPress OK to MERGE them.\nPress Cancel to replace this device with the cloud save.`);
+    }
+    cloudSaveCode = code;
+    localStorage.setItem('holodex_cloud_code', cloudSaveCode);
+    applyCloudData(remote, { merge });
+    localStorage.setItem('holodex_cloud_updated', res.updatedAt || remote.updatedAt || new Date().toISOString());
+    renderCloudSyncStatus('✓ Connected to cloud save.');
+    if(merge) await cloudPush({silent:true});
+    toast('Cloud save connected');
+  }catch(e){
+    setCloudStatus('✗ '+e.message, 'err');
+  }
+}
+
+async function cloudPull(opts={}){
+  if(!cloudSaveCode){ if(!opts.silent) toast('Create or connect a cloud save first.'); return; }
+  if(cloudSyncInFlight) return;
+  try{
+    cloudSyncInFlight = true;
+    if(!opts.silent) setCloudStatus('Loading from cloud…');
+    const res = await cloudRequest({ action:'load', code: cloudSaveCode });
+    const remote = res.data || {};
+    const remoteUpdated = new Date(res.updatedAt || remote.updatedAt || 0).getTime();
+    const localUpdated = new Date(localStorage.getItem('holodex_last_save') || 0).getTime();
+
+    // On startup, avoid overwriting newer local work. Push local if it is newer.
+    if(opts.auto && localUpdated && localUpdated > remoteUpdated){
+      await cloudPush({silent:true});
+      return;
+    }
+
+    applyCloudData(remote, { merge:false });
+    localStorage.setItem('holodex_cloud_updated', res.updatedAt || remote.updatedAt || new Date().toISOString());
+    renderCloudSyncStatus('✓ Synced from cloud.');
+    if(!opts.silent) toast('Synced from cloud');
+  }catch(e){
+    if(!opts.silent) setCloudStatus('✗ '+e.message, 'err');
+  }finally{
+    cloudSyncInFlight = false;
+  }
+}
+
+async function cloudPush(opts={}){
+  if(!cloudSaveCode){ if(!opts.silent) toast('Create or connect a cloud save first.'); return; }
+  if(cloudSyncInFlight && !opts.force) return;
+  try{
+    cloudSyncInFlight = true;
+    if(!opts.silent) setCloudStatus('Saving to cloud…');
+    const data = await cloudRequest({ action:'save', code: cloudSaveCode, data: buildCloudPayload() });
+    localStorage.setItem('holodex_cloud_updated', data.updatedAt || new Date().toISOString());
+    renderCloudSyncStatus('✓ Synced to cloud.');
+    if(!opts.silent) toast('Saved to cloud');
+  }catch(e){
+    if(!opts.silent) setCloudStatus('✗ '+e.message, 'err');
+  }finally{
+    cloudSyncInFlight = false;
+  }
+}
+
+function applyCloudData(data, opts={}){
+  cloudSyncMuted = true;
+  try{
+    const remoteCollection = Array.isArray(data.collection) ? data.collection : [];
+    const remoteWishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
+    const remoteHistory = Array.isArray(data.valueHistory) ? data.valueHistory : [];
+
+    if(opts.merge){
+      collection = mergeById(collection, remoteCollection);
+      wishlist = mergeById(wishlist, remoteWishlist);
+      valueHistory = mergeHistory(valueHistory, remoteHistory);
+    } else {
+      collection = remoteCollection;
+      wishlist = remoteWishlist;
+      valueHistory = remoteHistory;
+    }
+
+    localStorage.setItem('holodex_collection', JSON.stringify(collection));
+    localStorage.setItem('holodex_wishlist', JSON.stringify(wishlist));
+    localStorage.setItem('holodex_value_history', JSON.stringify(valueHistory));
+    localStorage.setItem('holodex_last_save', data.updatedAt || new Date().toISOString());
+    renderCollection();
+    renderWishlist();
+    renderHomeStats();
+  } finally {
+    cloudSyncMuted = false;
+  }
+}
+
+function mergeById(a,b){
+  const map = new Map();
+  [...(b||[]), ...(a||[])].forEach(item=>{
+    if(!item) return;
+    const key = String(item.id || `${item.name||''}|${item.set_id||item.set||''}|${item.number||''}|${item.condition||''}|${item.added||''}`);
+    map.set(key, item);
+  });
+  return Array.from(map.values());
+}
+
+function mergeHistory(a,b){
+  const map = new Map();
+  [...(b||[]), ...(a||[])].forEach(v=>{ if(v?.date) map.set(v.date, v); });
+  return Array.from(map.values()).sort((x,y)=>String(x.date).localeCompare(String(y.date))).slice(-365);
+}
+
+function copyCloudCode(showToast=true){
+  if(!cloudSaveCode) return;
+  if(navigator.clipboard?.writeText){
+    navigator.clipboard.writeText(cloudSaveCode).then(()=>{ if(showToast) toast('Cloud code copied'); }).catch(()=>{});
+  } else if(showToast){
+    alert(cloudSaveCode);
+  }
+}
+
+function disconnectCloudSave(){
+  if(!cloudSaveCode) return;
+  if(!confirm('Disconnect this device from Cloud Sync? Your cloud save will not be deleted.')) return;
+  cloudSaveCode = '';
+  localStorage.removeItem('holodex_cloud_code');
+  localStorage.removeItem('holodex_cloud_updated');
+  renderCloudSyncStatus('Cloud Sync disconnected on this device.');
+  toast('Cloud Sync disconnected');
+}
 
 // ── EXPORT / IMPORT ───────────────────────────────────────
 function exportCollection(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(collection,null,2)],{type:'application/json'}));a.download='holodex_'+new Date().toISOString().substring(0,10)+'.json';a.click();}

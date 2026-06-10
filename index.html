@@ -773,6 +773,22 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
         <button class="test-ebay-btn" onclick="testEbayKeys()">Test eBay Connection</button>
       </div>
       <div class="settings-sec">
+        <h3>Cloud Sync</h3>
+        <div id="cloudSyncBox" class="ebay-info-box">
+          <strong>Cloud Sync is off.</strong><br/>
+          Create a free cloud save code so cards auto-save online and can be opened on another device without importing files.
+        </div>
+        <div id="cloudStatus" class="ebay-status-msg" style="display:none;"></div>
+        <div id="cloudCopyRow" class="settings-row tap" onclick="copyCloudCode()" style="display:none;">
+          <div><div class="sl">Cloud Save Code</div><div class="ss" id="cloudCodeText">—</div></div><span class="sarr">Copy</span>
+        </div>
+        <div class="settings-row tap" onclick="createCloudSave()"><div><div class="sl">Create Cloud Save</div><div class="ss">Auto-save this device's collection online</div></div><span class="sarr">›</span></div>
+        <div class="settings-row tap" onclick="connectCloudSave()"><div><div class="sl">Connect Existing Code</div><div class="ss">Open your cloud collection on this device</div></div><span class="sarr">›</span></div>
+        <div class="settings-row tap" onclick="cloudPush({silent:false,force:true})"><div><div class="sl">Sync Now</div><div class="ss">Manually save this device to the cloud</div></div><span class="sarr">›</span></div>
+        <div class="settings-row tap" onclick="cloudPull({silent:false})"><div><div class="sl">Load from Cloud</div><div class="ss">Refresh this device from your cloud save</div></div><span class="sarr">›</span></div>
+        <div class="settings-row tap" onclick="disconnectCloudSave()"><div><div class="sl" style="color:var(--text2)">Disconnect Cloud Sync</div><div class="ss">Stops syncing this device only</div></div><span class="sarr">›</span></div>
+      </div>
+      <div class="settings-sec">
         <h3>Collection</h3>
         <div class="settings-row tap" onclick="exportCollection()"><div><div class="sl">Export as JSON</div><div class="ss">Full backup with all data</div></div><span class="sarr">›</span></div>
         <div class="settings-row tap" onclick="exportCSV()"><div><div class="sl">Export as CSV</div><div class="ss">Open in Excel or Sheets</div></div><span class="sarr">›</span></div>
@@ -786,7 +802,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       </div>
       <div class="settings-sec">
         <h3>About</h3>
-        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.1</span></div>
+        <div class="settings-row"><div><div class="sl">HoloDex</div><div class="ss">BossHog Gaming · Cloud Sync + Claude Vision + eBay Market API + PokéTCG API</div></div><span style="font-size:12px;color:var(--text3);">v2.2</span></div>
       </div>
     </div>
 

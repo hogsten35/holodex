@@ -18,12 +18,8 @@ exports.handler = async (event) => {
   }
 
   try {
-    // Request all needed scopes for Browse API
-    const scope = [
-      'https://api.ebay.com/oauth/api_scope',
-      'https://api.ebay.com/oauth/api_scope/buy.browse',
-      'https://api.ebay.com/oauth/api_scope/buy.item.summary'
-    ].join('%20');
+    // Basic scope — works on all eBay developer accounts
+    const scope = 'https://api.ebay.com/oauth/api_scope';
 
     const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
       method: 'POST',

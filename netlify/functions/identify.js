@@ -20,23 +20,31 @@ exports.handler = async (event) => {
     const prompt = isPack
       ? `Identify this Pokémon TCG booster pack. Return ONLY valid JSON:
 {"name":"pack product name","set":"set name","set_id":"TCG API set id if known"}`
-      : `You are an expert Pokémon TCG card identifier. The card may be inside a protective sleeve or case — look through it carefully. Read ALL visible text on the card precisely.
+      : `You are an expert Pokémon TCG card identifier. The card may be inside a protective sleeve, top loader, or case. Read only what is actually visible on the card.
 
-Return ONLY valid JSON, no markdown, no explanation:
+IMPORTANT:
+- Do NOT guess a set, set_id, collector number, or year if it is blurry or hidden. Use null when unsure.
+- The collector number is usually at the bottom-left or bottom-right and looks like 054/165, 070/102, TG01/TG30, etc.
+- Capture attack names, ability names, HP, type, illustrator, and any visible bottom text because the app will use them to verify the exact printing.
+- Return ONLY valid JSON, no markdown, no explanation.
+
 {
-  "name": "exact card name as printed — include ex/V/VMAX/GX/EX suffixes and any partner names like 'Slowpoke & Psyduck-GX'",
+  "name": "exact card name as printed — include ex/V/VMAX/GX/EX suffixes and partner names",
   "pokemon": "primary Pokémon name only e.g. Psyduck",
-  "set": "full official set name",
-  "set_id": "TCG API set id e.g. sm11 for Unified Minds, sv3pt5 for 151",
-  "number": "collector number e.g. 039/237",
-  "year": "year printed at card bottom",
-  "rarity": "rarity as printed e.g. Common, Rare Holo, Ultra Rare",
+  "set": "full official set name or null if not clearly visible",
+  "set_id": "PokémonTCG.io set id if known with high confidence, otherwise null",
+  "number": "collector number exactly as visible e.g. 054/165, or null if unreadable",
+  "year": "copyright/card year if visible, otherwise null",
+  "rarity": "rarity as printed or null",
   "hp": "HP number or null",
   "types": ["Water"],
   "artist": "illustrator name or null",
+  "abilities": ["ability names/text you can read"],
+  "attacks": ["attack names/damage you can read"],
+  "visible_text": "short string of the most useful visible words/numbers from the card",
   "condition": "NM or LP or MP or HP or DMG",
   "condition_notes": "one brief phrase",
-  "search_query": "eBay search string e.g. Pokemon Psyduck Slowpoke GX 039/237 Unified Minds sm11"
+  "search_query": "Pokemon + exact name + collector number if known + set if known"
 }`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {

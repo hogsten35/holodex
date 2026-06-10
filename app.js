@@ -34,6 +34,37 @@ function saveKeys() {
 }
 function hasKeys() { const k=getKeys(); return !!(k.clientId&&k.clientSecret); }
 
+async function testEbayKeys() {
+  const statusEl = document.getElementById('ebayStatus');
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--text2)';
+  statusEl.textContent = 'Testing connection…';
+  const { clientId, clientSecret } = getKeys();
+  if (!clientId || !clientSecret) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '⚠️ Enter both App ID and Cert ID first.';
+    return;
+  }
+  try {
+    const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret) },
+      body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+    });
+    const d = await res.json();
+    if (d.access_token) {
+      statusEl.style.color = 'var(--green)';
+      statusEl.textContent = '✓ Connected! Real eBay sold prices are now active.';
+    } else {
+      statusEl.style.color = 'var(--red)';
+      statusEl.textContent = '✗ Auth failed: ' + (d.error_description || d.error || 'Check your keys');
+    }
+  } catch(e) {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = '✗ Error: ' + e.message;
+  }
+}
+
 // ── NAV ───────────────────────────────────────────────────
 function showPage(name) {
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -94,13 +125,8 @@ function getCardPrice(card) {
 
 async function loadNews() {
   const el = document.getElementById('newsFeed');
-  const feeds = [
-    'https://www.pokebeach.com/feed',
-    'https://www.pocketmonsters.net/feed'
-  ];
-  const proxy = 'https://api.allorigins.win/raw?url=';
   try {
-    const res = await fetch(proxy + encodeURIComponent(feeds[0]));
+    const res = await fetch('/.netlify/functions/news');
     const text = await res.text();
     const parser = new DOMParser();
     const xml = parser.parseFromString(text, 'text/xml');
@@ -636,18 +662,28 @@ async function showQRModal(){
     const uploadUrl=`${location.origin}/scan-phone.html?s=${sessionId}`;
     document.getElementById('qrCanvas').innerHTML='';
     new QRCode(document.getElementById('qrCanvas'),{text:uploadUrl,width:180,height:180,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-    document.getElementById('qrStatus').textContent='Scan with your phone camera…';
+    document.getElementById('qrStatus').textContent='Waiting for photo from phone…';
+    let pollCount = 0;
     qrPollTimer=setInterval(async()=>{
+      pollCount++;
+      // Stop polling after 5 minutes
+      if(pollCount > 150){ clearInterval(qrPollTimer); document.getElementById('qrStatus').textContent='Session expired. Close and try again.'; return; }
       try{
         const pr=await fetch(`/.netlify/functions/upload-session?action=poll&id=${sessionId}`);
-        if(!pr.ok) return;
+        if(!pr.ok){
+          document.getElementById('qrStatus').textContent='⚠️ Poll error '+pr.status+' — retrying…';
+          return;
+        }
         const pd=await pr.json();
-        if(pd.status==='ready'){
+        if(pd.status==='waiting'){
+          // Still waiting — show a heartbeat so user knows it's alive
+          const dots='.'.repeat((pollCount%3)+1);
+          document.getElementById('qrStatus').textContent='Waiting for photo'+dots;
+        } else if(pd.status==='ready'){
           clearInterval(qrPollTimer);
           document.getElementById('qrStatus').textContent='✓ Photo received — scanning now…';
           document.getElementById('qrStatus').className='qr-status ok';
           imgB64=pd.imageBase64;
-          // Show the image in the scan zone
           const img=document.getElementById('previewImg');
           img.src='data:image/jpeg;base64,'+imgB64;
           img.style.display='block';
@@ -659,7 +695,9 @@ async function showQRModal(){
           showPage('scan');
           setTimeout(()=>scanCard(),500);
         }
-      }catch(e){}
+      }catch(e){
+        document.getElementById('qrStatus').textContent='⚠️ Network error — retrying…';
+      }
     },2000);
   }catch(e){
     document.getElementById('qrStatus').textContent='Error: '+e.message;

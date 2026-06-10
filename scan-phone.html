@@ -268,10 +268,16 @@ async function sendImage() {
     });
 
     if(res.ok) {
-      showStatus('✓ Sent! Check desktop', 'ok');
+      showStatus('✓ Sent!', 'ok');
       setFallbackStatus('✓ Sent! Switch to your desktop.', 'ok');
       document.getElementById('sendBtn').textContent = '✓ Sent!';
       btn.classList.remove('sending');
+      // Auto-close tab after 1.5 seconds
+      setTimeout(() => {
+        window.close();
+        // If window.close() is blocked (some browsers), show a message
+        setTimeout(() => showStatus('✓ Done — you can close this tab', 'ok'), 500);
+      }, 1500);
     } else {
       const d = await res.json().catch(()=>({}));
       throw new Error(d.error || 'Upload failed ('+res.status+')');

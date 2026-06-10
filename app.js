@@ -24,6 +24,7 @@ let collectionTimelineChart = null;
 let currentTimelineRange = '30d';
 let batchScanCancelled = false;
 let batchScanRunning = false;
+let batchResults = [];
 
 const CONDITIONS = ['NM','LP','MP','HP','DMG'];
 const EBAY_COND = { NM:'1000', LP:'1500', MP:'2000', HP:'3000', DMG:'4000' };
@@ -424,10 +425,12 @@ function renderBatchPanel(files){
   const list = document.getElementById('batchList');
   const progress = document.getElementById('batchProgress');
   if(!panel || !list || !progress) return;
+  batchResults = [];
   panel.style.display = 'block';
   progress.style.width = '0%';
-  document.getElementById('batchSummary').textContent = `Ready to scan ${files.length} photo${files.length!==1?'s':''}.`;
-  list.innerHTML = files.map((f,i)=>`<div class="batch-row" id="batchRow${i}"><span class="batch-dot wait"></span><div class="batch-main"><div class="batch-name">${escapeHtml(f.name)}</div><div class="batch-sub">Waiting…</div></div></div>`).join('');
+  document.getElementById('batchSummary').textContent = `Ready to scan ${files.length} photo${files.length!==1?'s':''}. Results will be reviewed before adding.`;
+  const addBtn = document.getElementById('batchAddBtn'); if(addBtn) addBtn.disabled = true;
+  list.innerHTML = files.map((f,i)=>`<div class="batch-row" id="batchRow${i}"><span class="batch-dot wait"></span><input class="batch-check" type="checkbox" id="batchCheck${i}" disabled/><div class="batch-thumb" id="batchThumb${i}"></div><div class="batch-main"><div class="batch-name">${escapeHtml(f.name)}</div><div class="batch-sub">Waiting…</div></div><button class="batch-review-btn" id="batchReview${i}" style="display:none" onclick="reviewBatchResult(${i})">Review</button></div>`).join('');
 }
 
 function updateBatchRow(i, state, title, sub=''){
@@ -438,6 +441,53 @@ function updateBatchRow(i, state, title, sub=''){
   dot.className = 'batch-dot '+state;
   if(title) name.textContent = title;
   subEl.textContent = sub;
+}
+
+function setBatchResult(i, entry, card, confidence='ok'){
+  batchResults[i] = { entry, card, add: confidence !== 'err', confidence };
+  const row = document.getElementById('batchRow'+i);
+  if(!row) return;
+  const check = document.getElementById('batchCheck'+i);
+  const thumb = document.getElementById('batchThumb'+i);
+  const btn = document.getElementById('batchReview'+i);
+  if(check){ check.disabled = false; check.checked = confidence !== 'warn'; check.onchange = () => { if(batchResults[i]) batchResults[i].add = check.checked; updateBatchReadyCount(); }; }
+  if(thumb && entry?.image) thumb.innerHTML = `<img src="${entry.image}" alt=""/>`;
+  if(btn) btn.style.display = card? 'inline-flex' : 'none';
+  updateBatchReadyCount();
+}
+
+function updateBatchReadyCount(){
+  const ready = batchResults.filter(r=>r?.entry).length;
+  const selected = batchResults.filter(r=>r?.entry && r.add).length;
+  const addBtn = document.getElementById('batchAddBtn');
+  if(addBtn){ addBtn.disabled = selected === 0; addBtn.textContent = selected ? `Add ${selected} Selected` : 'Add Selected'; }
+  const status = document.getElementById('batchReviewStatus');
+  if(status) status.textContent = ready ? `${selected} selected · ${ready} ready for review` : 'Review matches before adding them to your collection.';
+}
+
+function reviewBatchResult(i){
+  const r = batchResults[i];
+  if(!r?.card){ toast('No card to review yet'); return; }
+  if(r.card._tcgId) openCardModal(r.card._tcgId);
+  else toast([r.card.name, r.card.set, r.card.number ? '#'+r.card.number : null].filter(Boolean).join(' · '));
+}
+
+function addBatchConfirmed(){
+  if(batchScanRunning){ toast('Wait for batch scan to finish first'); return; }
+  const selected = batchResults.filter(r=>r?.entry && r.add).map(r=>r.entry);
+  if(!selected.length){ toast('No batch cards selected'); return; }
+  const seen = new Set(collection.map(c => [c.tcgId||'', c.name||'', c.set||'', c.number||'', c.condition||''].join('|')));
+  const toAdd = selected.filter(e => {
+    const key = [e.tcgId||'', e.name||'', e.set||'', e.number||'', e.condition||''].join('|');
+    if(seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+  collection.push(...toAdd);
+  saveCollection();
+  renderCollection();
+  renderHomeStats();
+  toast(`✓ Added ${toAdd.length} card${toAdd.length!==1?'s':''} from batch`);
+  cloudPush({silent:true,force:true});
 }
 
 function escapeHtml(str){
@@ -497,19 +547,15 @@ async function handleBatchFiles(input){
   batchScanCancelled = false;
   renderBatchPanel(files);
 
-  // Prevent a cloud write after every single card; sync once at the end.
-  const prevCloudMuted = cloudSyncMuted;
-  cloudSyncMuted = true;
-
   const cond = document.getElementById('batchCond')?.value || 'NM';
-  let added = 0, failed = 0;
+  let ready = 0, failed = 0, warnings = 0;
 
   for(let i=0;i<files.length;i++){
     if(batchScanCancelled) break;
     const file = files[i];
     const pct = Math.round((i / files.length) * 100);
     document.getElementById('batchProgress').style.width = pct + '%';
-    document.getElementById('batchSummary').textContent = `Scanning ${i+1} of ${files.length}… ${added} added, ${failed} failed.`;
+    document.getElementById('batchSummary').textContent = `Scanning ${i+1} of ${files.length}… ${ready} ready, ${warnings} review, ${failed} failed.`;
     updateBatchRow(i, 'run', file.name, 'Compressing photo…');
 
     try{
@@ -519,28 +565,26 @@ async function handleBatchFiles(input){
       const card = await identifyCardFromBase64(b64);
       updateBatchRow(i, 'run', card.name || file.name, 'Matching print and price…');
       const img = card._tcgImage || await fetchCardImage(card) || ('data:image/jpeg;base64,'+b64);
-      collection.push(collectionEntryFromResolvedCard(card, cond, img));
-      added++;
-      updateBatchRow(i, 'ok', card.name || 'Added card', [card.set, card.number?'#'+card.number:null, `$${(collection[collection.length-1].avgPrice||0).toFixed(2)}`].filter(Boolean).join(' · '));
-      saveCollection();
-      renderCollection();
-      renderHomeStats();
+      const entry = collectionEntryFromResolvedCard(card, cond, img);
+      const price = entry.avgPrice ? `$${entry.avgPrice.toFixed(2)}` : 'No market price';
+      const warning = card._matchWarning;
+      if(warning) warnings++; else ready++;
+      updateBatchRow(i, warning ? 'warn' : 'ok', card.name || 'Matched card', [card.set, card.number?'#'+card.number:null, price, warning?'review match':'ready'].filter(Boolean).join(' · '));
+      setBatchResult(i, entry, card, warning ? 'warn' : 'ok');
     }catch(e){
       failed++;
       updateBatchRow(i, 'err', file.name, e.message || 'Could not identify');
     }
-    await sleep(350);
+    await sleep(250);
   }
-
-  cloudSyncMuted = prevCloudMuted;
-  if(added) saveCollection();
 
   document.getElementById('batchProgress').style.width = '100%';
   document.getElementById('batchSummary').textContent = batchScanCancelled
-    ? `Batch stopped. ${added} added, ${failed} failed.`
-    : `Batch complete. ${added} added, ${failed} failed.`;
+    ? `Batch stopped. ${ready} ready, ${warnings} need review, ${failed} failed.`
+    : `Batch review ready. ${ready} ready, ${warnings} need review, ${failed} failed.`;
   batchScanRunning = false;
-  if(added) toast(`✓ Batch added ${added} card${added!==1?'s':''}`);
+  updateBatchReadyCount();
+  if(ready || warnings) toast(`✓ Batch matched ${ready+warnings} card${ready+warnings!==1?'s':''}. Review then add.`);
 }
 
 // ── MANUAL SEARCH ─────────────────────────────────────────
@@ -654,10 +698,9 @@ function formatActivityDate(dateLike) {
 function buildEbayActivity(items, totalChecked = 0) {
   const dated = items
     .map(item => ({ item, date: getEbayListingDate(item) }))
-    .filter(x => x.date)
-    .sort((a,b) => b.date - a.date);
+    .sort((a,b) => (b.date?.getTime?.() || 0) - (a.date?.getTime?.() || 0));
 
-  const latest = dated[0] || null;
+  const latest = dated.find(x => x.date) || null;
   return {
     latestListingDate: latest ? latest.date.toISOString() : null,
     latestListingLabel: latest ? formatActivityDate(latest.date) : null,
@@ -665,7 +708,15 @@ function buildEbayActivity(items, totalChecked = 0) {
     matchCount: items.length,
     totalChecked,
     checkedAt: new Date().toISOString(),
-    note: 'Active eBay market listings, not completed sold comps'
+    note: 'Active eBay market listings, not completed sold comps',
+    recentItems: dated.slice(0, 8).map(({item,date}) => ({
+      title: item.title || 'eBay listing',
+      price: parseMoney(item.price?.value || item.currentBidPrice?.value) || null,
+      currency: item.price?.currency || item.currentBidPrice?.currency || 'USD',
+      date: date ? date.toISOString() : null,
+      dateLabel: date ? formatActivityDate(date) : 'Active',
+      url: item.itemWebUrl || item.itemAffiliateWebUrl || null
+    }))
   };
 }
 
@@ -1698,29 +1749,135 @@ async function searchPack(){
 }
 
 // ── CARD MODAL ────────────────────────────────────────────
+
+function money(v){ return Number.isFinite(v) ? '$'+v.toFixed(2) : '—'; }
+function bestTcgPriceRowsFromApiCard(card){
+  const tcp = card?.tcgplayer?.prices || null;
+  const condMap = {holofoil:'Holo', reverseHolofoil:'Reverse Holo', normal:'Normal', '1stEditionHolofoil':'1st Ed Holo', unlimitedHolofoil:'Unlimited Holo'};
+  const rows = [];
+  if(tcp) Object.entries(tcp).forEach(([t,p]) => {
+    const market = parseMoney(p?.market) || parseMoney(p?.mid) || parseMoney(p?.low);
+    if(market) rows.push({ key:t, label:condMap[t]||t, nm:market, low:parseMoney(p?.low)||market, high:parseMoney(p?.high)||market });
+  });
+  rows.sort((a,b) => {
+    const order = ['normal','holofoil','reverseHolofoil','1stEditionHolofoil','unlimitedHolofoil'];
+    return order.indexOf(a.key) - order.indexOf(b.key);
+  });
+  return rows;
+}
+function collectionCountForApiCard(card){
+  return collection.filter(c => (card?.id && c.tcgId === card.id) || ((c.name||'')===card?.name && ((c.set_id&&card?.set?.id&&c.set_id===card.set.id)||(c.set&&card?.set?.name&&c.set===card.set.name)) && (!c.number || !card?.number || String(c.number).includes(String(card.number))))).length;
+}
+function collectionValueForApiCard(card){
+  return collection.filter(c => (card?.id && c.tcgId === card.id) || ((c.name||'')===card?.name && (c.set_id===card?.set?.id || c.set===card?.set?.name))).reduce((s,c)=>s+(c.avgPrice||0),0);
+}
+function ebayRawTitleLooksRelevant(title, card){
+  const t = String(title || '').toLowerCase();
+  if (/\b(proxy|custom|digital|code card|online code|empty pack|jumbo|oversized|sticker|art card|graded|slab|slabbed|psa|cgc|bgs|sgc|beckett|black label|gem mint|booster|sealed|pack|tin|box)\b/i.test(t)) return false;
+  if (/\b(lot|bundle|collection)\b/i.test(t) && !/\b(single|individual|1 card)\b/i.test(t)) return false;
+  const nameWords = String(card?.name||'').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['ex','gx','v','vmax'].includes(w));
+  if(nameWords.length && !nameWords.every(w => t.includes(w))) return false;
+  if(card?.number && !titleHasCardNumber(t, card.number)) return false;
+  return true;
+}
+function ebayGradedTitleLooksRelevant(title, card, grade){
+  const t = String(title || '').toLowerCase();
+  if(!/\b(psa|cgc|bgs|beckett)\b/.test(t)) return false;
+  if(grade && !new RegExp('\\b'+String(grade).replace('.', '\\.')+'\\b').test(t)) return false;
+  const nameWords = String(card?.name||'').toLowerCase().split(/\s+/).filter(w => w.length > 2 && !['ex','gx','v','vmax'].includes(w));
+  if(nameWords.length && !nameWords.every(w => t.includes(w))) return false;
+  if(card?.number && !titleHasCardNumber(t, card.number)) return false;
+  return true;
+}
+function aggregateActiveListingValue(items){
+  const arr = items.map(item => parseMoney(item.price?.value || item.currentBidPrice?.value)).filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!arr.length) return null;
+  const trimmed = arr.length >= 5 ? arr.slice(0, Math.max(3, Math.ceil(arr.length*.75))) : arr;
+  const avg = trimmed.reduce((s,n)=>s+n,0)/trimmed.length;
+  return { avg:+avg.toFixed(2), low:trimmed[0], high:trimmed[trimmed.length-1], count:trimmed.length };
+}
+function renderProListings(activity){
+  const el = document.getElementById('proListings'); if(!el) return;
+  const items = activity?.recentItems || [];
+  if(!items.length){ el.innerHTML = '<div class="pro-muted">No clean active eBay listings found for this raw card.</div>'; return; }
+  el.innerHTML = items.slice(0,5).map(it => `<div class="pro-listing">
+    <div class="pro-listing-date">${escapeHtml(String(it.dateLabel||'Active').replace(/, /g,' '))}</div>
+    <a class="pro-listing-title" href="${it.url||'#'}" target="_blank" rel="noopener">${escapeHtml(it.title)}</a>
+    <div class="pro-listing-price">${money(it.price)}</div>
+  </div>`).join('') + '<div class="pro-muted" style="margin-top:8px;">Active listings only, not sold comps.</div>';
+}
+async function loadModalMarketExtras(card, rawPrice){
+  const q = `Pokemon ${card.name} ${card.number||''} ${card.set?.name||''}`.trim();
+  const proEbay = document.getElementById('proEbayPrice');
+  const gradeGrid = document.getElementById('proGradeGrid');
+  try{
+    const rawData = await callEbaySearch(q, 50);
+    const rawItems = (rawData.itemSummaries||[]).filter(item => ebayRawTitleLooksRelevant(item.title, card));
+    const rawAgg = aggregateActiveListingValue(rawItems);
+    const activity = buildEbayActivity(rawItems, rawData.itemSummaries?.length||0);
+    if(proEbay) proEbay.textContent = rawAgg ? money(rawAgg.avg) : 'No matches';
+    renderProListings(activity);
+  }catch(e){
+    if(proEbay) proEbay.textContent = 'Unavailable';
+    renderProListings(null);
+  }
+
+  // Graded data is intentionally separate from raw collection value.
+  const grades = [10,9,8];
+  const gradeResults = await Promise.all(grades.map(async g => {
+    try{
+      const d = await callEbaySearch(`${q} PSA ${g}`, 25);
+      const items = (d.itemSummaries||[]).filter(item => ebayGradedTitleLooksRelevant(item.title, card, g));
+      return { grade:g, data:aggregateActiveListingValue(items) };
+    }catch(e){ return { grade:g, data:null }; }
+  }));
+  if(gradeGrid){
+    gradeGrid.innerHTML = gradeResults.map(r => `<div class="pro-grade"><div class="g">PSA ${r.grade}</div><div class="p">${r.data?money(r.data.avg):'—'}</div><div class="s">${r.data?`${r.data.count} active`:'no data'}</div></div>`).join('');
+  }
+}
+function shareModalCard(){
+  const name = document.getElementById('modalName')?.textContent || 'HoloDex card';
+  const meta = document.getElementById('modalMeta')?.textContent || '';
+  const text = `${name}${meta?' · '+meta:''}`;
+  if(navigator.share) navigator.share({title:name,text}).catch(()=>{});
+  else navigator.clipboard?.writeText(text).then(()=>toast('Copied card details'));
+}
+
 async function openCardModal(tcgCardId){
   const modal=document.getElementById('cardModal');modal.classList.add('open');
   document.getElementById('modalImg').src='';document.getElementById('modalName').textContent='Loading…';document.getElementById('modalMeta').textContent='';
   document.getElementById('modalPriceTbody').innerHTML='';document.getElementById('modalSetContent').innerHTML='<div class="spin-row"><div class="spin"></div></div>';document.getElementById('modalInfoRows').innerHTML='';
+  setText('proRawPrice','—'); setText('proEbayPrice','Loading…'); setText('proOwnedValue','—'); setText('proSetBadge','Pokémon TCG'); setText('proRarityBadge','Rarity —'); setText('proOwnedBadge','Owned: 0');
+  const gradeGrid = document.getElementById('proGradeGrid'); if(gradeGrid) gradeGrid.innerHTML = '<div class="pro-grade"><div class="g">PSA 10</div><div class="p">—</div><div class="s">checking</div></div><div class="pro-grade"><div class="g">PSA 9</div><div class="p">—</div><div class="s">checking</div></div><div class="pro-grade"><div class="g">PSA 8</div><div class="p">—</div><div class="s">checking</div></div>';
+  const listings = document.getElementById('proListings'); if(listings) listings.innerHTML='<div class="pro-muted">Loading active listing activity…</div>';
   if(modalChart){modalChart.destroy();modalChart=null;}
   document.querySelectorAll('.tab-strip .tab').forEach(t=>t.classList.remove('active'));document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-  document.querySelector('.tab-strip .tab').classList.add('active');document.getElementById('tab-prices').classList.add('active');
+  const firstTab = document.querySelector('.tab-strip .tab'); if(firstTab) firstTab.classList.add('active'); document.getElementById('tab-prices')?.classList.add('active');
   try{
     const res=await fetch(`https://api.pokemontcg.io/v2/cards/${tcgCardId}`);
     const d=await res.json();const card=d.data;
     document.getElementById('modalImg').src=card.images?.large||card.images?.small||'';
     document.getElementById('modalName').textContent=card.name;
     document.getElementById('modalMeta').textContent=[card.set?.name,card.number?'#'+card.number:null,card.rarity].filter(Boolean).join('  ·  ');
-    const tcp=card.tcgplayer?.prices;
-    const condMap={holofoil:'Holo',reverseHolofoil:'Reverse Holo',normal:'Normal','1stEditionHolofoil':'1st Ed Holo',unlimitedHolofoil:'Unlimited Holo'};
-    const priceRows=[];
-    if(tcp) Object.entries(tcp).forEach(([t,p])=>{if(p?.market) priceRows.push({label:condMap[t]||t,nm:p.market,low:p.low,high:p.high});});
+    setText('proSetBadge', card.set?.name ? '◉ '+card.set.name : 'Pokémon TCG');
+    setText('proRarityBadge', card.rarity || 'Rarity —');
+    const ownedCount = collectionCountForApiCard(card);
+    const ownedValue = collectionValueForApiCard(card);
+    setText('proOwnedBadge', `Owned: ${ownedCount}`);
+    setText('proOwnedValue', ownedCount ? money(ownedValue) : 'Not owned');
+
+    const priceRows = bestTcgPriceRowsFromApiCard(card);
     document.getElementById('modalPriceTbody').innerHTML=priceRows.length
-      ?priceRows.map(r=>`<tr><td style="font-weight:600;">${r.label}</td><td class="pv">$${r.nm?.toFixed(2)||'—'}</td><td class="plo">${r.low?'$'+r.low.toFixed(2):'—'}</td><td class="phi">${r.high?'$'+r.high.toFixed(2):'—'}</td></tr>`).join('')
+      ?priceRows.map(r=>`<tr><td style="font-weight:600;">${r.label}</td><td class="pv">${money(r.nm)}</td><td class="plo">${money(r.low)}</td><td class="phi">${money(r.high)}</td></tr>`).join('')
       :'<tr><td colspan="4" class="pm" style="padding:12px 14px;">Prices unavailable</td></tr>';
     const basePx=priceRows[0]?.nm;
+    setText('proRawPrice', basePx ? money(basePx) : '—');
+    setText('proPriceSource', priceRows[0]?.label ? `TCGplayer · ${priceRows[0].label}` : 'TCGplayer');
     if(basePx&&currentCard) currentCard._prices={NM:{avg:basePx}};
+    const prevCurrent = currentCard;
+    currentCard = { ...(currentCard||{}), _prices:{NM:{avg:basePx||0}}, name:card.name };
     renderHistoryChart('modalChart',null,'6m',false);
+    currentCard = prevCurrent;
     const tcgUrl=card.tcgplayer?.url||`https://www.tcgplayer.com/search/pokemon/product?q=${encodeURIComponent(card.name)}`;
     document.getElementById('tcgLink').href=tcgUrl;
     document.getElementById('modalInfoRows').innerHTML=[
@@ -1731,10 +1888,11 @@ async function openCardModal(tcgCardId){
       card.nationalPokedexNumbers?.length&&['Pokédex','#'+card.nationalPokedexNumbers.join(', #')]
     ].filter(Boolean).map(([k,v])=>`<div class="info-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('');
     loadModalSet(card);
+    loadModalMarketExtras(card, basePx);
     document.getElementById('modalAddBtn').onclick=()=>{
       const cond=document.getElementById('modalCond').value;
-      pushCard({name:card.name,pokemon:card.name.split(' ')[0],set:card.set?.name,set_id:card.set?.id,number:card.number,year:card.set?.releaseDate?.substring(0,4),rarity:card.rarity,hp:card.hp,types:card.types,artist:card.artist,condition:cond,search_query:`Pokemon ${card.name} ${card.number} ${card.set?.name}`,image:card.images?.large||card.images?.small||'',avgPrice:priceRows[0]?.nm||null,tcgId:card.id});
-      toast('✓ '+card.name+' added!');closeModal();
+      pushCard({name:card.name,pokemon:card.name.split(' ')[0],set:card.set?.name,set_id:card.set?.id,number:card.number,year:card.set?.releaseDate?.substring(0,4),rarity:card.rarity,hp:card.hp,types:card.types,artist:card.artist,condition:cond,search_query:`Pokemon ${card.name} ${card.number} ${card.set?.name}`,image:card.images?.large||card.images?.small||'',avgPrice:priceRows[0]?.nm||null,tcgId:card.id,priceSource:'TCGplayer',priceVariant:priceRows[0]?.label||null});
+      toast('✓ '+card.name+' added!');closeModal();renderHomeStats();
     };
     document.getElementById('modalWantBtn').onclick=()=>{
       addToWishlist({name:card.name,pokemon:card.name.split(' ')[0],set:card.set?.name,set_id:card.set?.id,number:card.number,rarity:card.rarity,image:card.images?.large||card.images?.small||'',avgPrice:priceRows[0]?.nm||null,tcgId:card.id});

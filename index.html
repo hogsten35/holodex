@@ -541,6 +541,42 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 .batch-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .batch-sub{font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 
+
+.batch-dot.warn{background:var(--gold);box-shadow:0 0 0 4px rgba(240,192,64,.12);}
+.batch-check{width:18px;height:18px;accent-color:var(--purple);flex-shrink:0;}
+.batch-thumb{width:34px;height:47px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);overflow:hidden;flex-shrink:0;}
+.batch-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.batch-review-btn{display:inline-flex;align-items:center;justify-content:center;background:var(--bg3);border:1px solid var(--border2);border-radius:7px;color:var(--purple2);font-size:12px;font-weight:700;padding:7px 9px;font-family:var(--fb);cursor:pointer;}
+.batch-review-status{font-size:12px;color:var(--purple3);background:var(--purple-bg);border:1px solid rgba(124,58,237,.22);border-radius:var(--rs);padding:9px 11px;margin:-2px 0 10px;}
+#batchAddBtn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;}
+
+/* HoloDex Pro card detail */
+.drawer.pro-drawer{padding:0 0 calc(env(safe-area-inset-bottom,16px) + 18px);background:linear-gradient(180deg,#10131d 0%,var(--bg2) 45%,var(--bg) 100%);border:1px solid rgba(255,255,255,.08);border-bottom:none;}
+.pro-card-hero{position:relative;padding:14px 18px 16px;border-bottom:1px solid var(--border);overflow:hidden;}
+.pro-card-hero::before{content:'';position:absolute;inset:-70px -70px auto auto;width:240px;height:240px;background:radial-gradient(circle,rgba(124,58,237,.22),transparent 70%);pointer-events:none;}
+.pro-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;position:relative;z-index:1;}
+.pro-back{display:inline-flex;align-items:center;gap:8px;background:transparent;border:none;color:var(--text);font-family:var(--fh);font-size:16px;font-weight:700;cursor:pointer;padding:4px 0;}
+.pro-actions{display:flex;align-items:center;gap:8px;}
+.pro-action-btn{width:35px;height:35px;border-radius:10px;background:var(--bg3);border:1px solid var(--border2);color:var(--text2);font-size:16px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.pro-hero-grid{display:grid;grid-template-columns:126px 1fr;gap:16px;align-items:start;position:relative;z-index:1;}
+.pro-img-wrap{width:126px;border-radius:12px;overflow:hidden;box-shadow:0 12px 38px rgba(0,0,0,.55);border:1px solid var(--border2);background:var(--bg3);}
+.pro-img-wrap img{width:100%;aspect-ratio:2.5/3.5;object-fit:cover;display:block;}
+.pro-title{font-family:var(--fh);font-size:22px;font-weight:800;letter-spacing:-.45px;line-height:1.15;margin-top:4px;}
+.pro-meta{font-size:12px;color:var(--text2);line-height:1.45;margin-top:6px;}
+.pro-badge-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;}
+.pro-set-badge{display:inline-flex;align-items:center;gap:6px;background:var(--purple);color:#fff;border-radius:9px;padding:8px 10px;font-size:12px;font-weight:800;box-shadow:0 6px 20px rgba(124,58,237,.25);}
+.pro-pill{display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border2);border-radius:999px;padding:7px 10px;font-size:11px;color:var(--text2);font-weight:700;}
+.pro-market-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+.pro-market-chip{background:rgba(255,255,255,.045);border:1px solid var(--border2);border-radius:10px;padding:9px 10px;min-width:0;}
+.pro-market-chip .k{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pro-market-chip .v{font-family:var(--fh);font-size:16px;font-weight:800;color:var(--text);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.pro-market-chip.good .v{color:var(--green);}.pro-market-chip.warn .v{color:var(--gold);}
+.pro-content{padding:14px 18px 0;}.pro-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px;}
+.pro-section-title{font-family:var(--fh);font-size:15px;font-weight:800;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;}.pro-muted{font-size:12px;color:var(--text3);line-height:1.45;}
+.pro-grade-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}.pro-grade{background:var(--bg3);border:1px solid var(--border2);border-radius:10px;padding:10px 8px;text-align:center;}.pro-grade .g{font-size:11px;color:var(--text3);font-weight:800;text-transform:uppercase;letter-spacing:.05em;}.pro-grade .p{font-family:var(--fh);font-size:18px;font-weight:800;color:var(--text);margin-top:4px;}.pro-grade .s{font-size:10px;color:var(--text3);margin-top:2px;}
+.pro-listing{display:grid;grid-template-columns:72px 1fr 72px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}.pro-listing:last-child{border-bottom:none;}.pro-listing-date{font-size:12px;color:var(--text2);font-weight:700;}.pro-listing-title{font-size:12px;color:var(--purple2);font-weight:700;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}.pro-listing-price{text-align:right;font-family:var(--fh);font-size:15px;font-weight:800;color:var(--text);}
+@media(max-width:520px){.pro-hero-grid{grid-template-columns:104px 1fr;gap:13px}.pro-img-wrap{width:104px}.pro-title{font-size:19px}.pro-market-strip{grid-template-columns:1fr 1fr}.pro-market-chip:last-child{grid-column:1/-1}.pro-grade-grid{grid-template-columns:repeat(3,1fr)}.pro-listing{grid-template-columns:58px 1fr 62px;}}
+
 /* TOAST */
 #toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:11px 20px;border-radius:22px;font-size:13px;font-weight:500;z-index:999;opacity:0;transition:opacity .3s;white-space:nowrap;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.5);}
 </style>
@@ -628,7 +664,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
             <option value="NM">Near Mint</option><option value="LP">Lightly Played</option><option value="MP">Moderately Played</option><option value="HP">Heavily Played</option><option value="DMG">Damaged</option>
           </select>
           <button class="btn btn-primary btn-sm" onclick="triggerBatchUpload()">Choose Photos</button>
+          <button class="btn btn-green btn-sm" id="batchAddBtn" onclick="addBatchConfirmed()" disabled>Add Selected</button>
         </div>
+        <div class="batch-review-status" id="batchReviewStatus">Review matches before adding them to your collection.</div>
         <div class="batch-progress-wrap"><div class="batch-progress" id="batchProgress"></div></div>
         <div class="batch-summary" id="batchSummary">Choose photos to start.</div>
         <div class="batch-list" id="batchList"></div>
@@ -922,35 +960,86 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 
 <!-- CARD MODAL -->
 <div class="overlay" id="cardModal">
-  <div class="drawer">
+  <div class="drawer pro-drawer">
     <div class="drawer-handle"></div>
-    <button class="drawer-close" onclick="closeModal()">✕</button>
-    <img class="modal-img" id="modalImg" src="" alt=""/>
-    <div class="modal-name" id="modalName">—</div>
-    <div class="modal-meta" id="modalMeta"></div>
-    <div class="tab-strip">
-      <button class="tab active" onclick="switchTab('prices',this)">Prices</button>
-      <button class="tab" onclick="switchTab('set',this)">In Set</button>
-      <button class="tab" onclick="switchTab('info',this)">Details</button>
+    <div class="pro-card-hero">
+      <div class="pro-topline">
+        <button class="pro-back" onclick="closeModal()">‹ Back</button>
+        <div class="pro-actions">
+          <button class="pro-action-btn" id="proShareBtn" onclick="shareModalCard()" title="Share">↗</button>
+          <button class="pro-action-btn" onclick="closeModal()" title="Close">✕</button>
+        </div>
+      </div>
+      <div class="pro-hero-grid">
+        <div class="pro-img-wrap"><img id="modalImg" src="" alt=""/></div>
+        <div>
+          <div class="pro-title" id="modalName">—</div>
+          <div class="pro-meta" id="modalMeta"></div>
+          <div class="pro-badge-row">
+            <div class="pro-set-badge" id="proSetBadge">Pokémon TCG</div>
+            <div class="pro-pill" id="proRarityBadge">Rarity —</div>
+            <div class="pro-pill" id="proOwnedBadge">Owned: 0</div>
+          </div>
+          <div class="pro-market-strip">
+            <div class="pro-market-chip good"><div class="k">Raw TCG Market</div><div class="v" id="proRawPrice">—</div></div>
+            <div class="pro-market-chip"><div class="k">eBay Activity</div><div class="v" id="proEbayPrice">Loading…</div></div>
+            <div class="pro-market-chip warn"><div class="k">Collection Value</div><div class="v" id="proOwnedValue">—</div></div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="tab-pane active" id="tab-prices">
-      <div class="chart-wrap" style="margin-bottom:14px;"><canvas id="modalChart"></canvas></div>
-      <table class="price-table" style="width:100%;"><thead><tr><th>Type</th><th>Market</th><th>Low</th><th>High</th></tr></thead><tbody id="modalPriceTbody"></tbody></table>
-      <a class="tcgplayer-link" id="tcgLink" href="#" target="_blank" rel="noopener">
-        <span>🔗 View on TCGPlayer</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-      </a>
-    </div>
-    <div class="tab-pane" id="tab-set"><div id="modalSetContent"></div></div>
-    <div class="tab-pane" id="tab-info"><div id="modalInfoRows"></div></div>
-    <div class="modal-add-row">
-      <select class="cond-sel" id="modalCond">
-        <option value="NM">Near Mint</option><option value="LP">Lightly Played</option>
-        <option value="MP">Mod. Played</option><option value="HP">Heavily Played</option>
-        <option value="DMG">Damaged</option>
-      </select>
-      <button class="btn btn-ghost btn-sm" id="modalWantBtn" title="Add to wishlist">🎯 Want</button>
-      <button class="btn btn-primary" id="modalAddBtn">+ Add</button>
+
+    <div class="pro-content">
+      <div class="tab-strip">
+        <button class="tab active" onclick="switchTab('prices',this)">Market</button>
+        <button class="tab" onclick="switchTab('history',this)">History</button>
+        <button class="tab" onclick="switchTab('set',this)">Set</button>
+        <button class="tab" onclick="switchTab('info',this)">Details</button>
+      </div>
+
+      <div class="tab-pane active" id="tab-prices">
+        <div class="pro-section">
+          <div class="pro-section-title">Raw Card Pricing <span class="pro-muted" id="proPriceSource">TCGplayer</span></div>
+          <table class="price-table" style="width:100%;"><thead><tr><th>Type</th><th>Market</th><th>Low</th><th>High</th></tr></thead><tbody id="modalPriceTbody"></tbody></table>
+          <a class="tcgplayer-link" id="tcgLink" href="#" target="_blank" rel="noopener">
+            <span>🔗 View raw card on TCGPlayer</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+          </a>
+        </div>
+        <div class="pro-section">
+          <div class="pro-section-title">Graded Market Watch <span class="pro-muted">active listings</span></div>
+          <div class="pro-grade-grid" id="proGradeGrid">
+            <div class="pro-grade"><div class="g">PSA 10</div><div class="p">—</div><div class="s">checking</div></div>
+            <div class="pro-grade"><div class="g">PSA 9</div><div class="p">—</div><div class="s">checking</div></div>
+            <div class="pro-grade"><div class="g">PSA 8</div><div class="p">—</div><div class="s">checking</div></div>
+          </div>
+          <div class="pro-muted" style="margin-top:9px;">Graded prices are active asking/listing data only. Your collection value still uses raw TCG market value.</div>
+        </div>
+        <div class="pro-section">
+          <div class="pro-section-title">Recent eBay Activity <span class="pro-muted">not sold comps</span></div>
+          <div id="proListings"><div class="pro-muted">Loading active listing activity…</div></div>
+        </div>
+      </div>
+
+      <div class="tab-pane" id="tab-history">
+        <div class="pro-section">
+          <div class="pro-section-title">Card Value History <span class="pro-muted">local timeline</span></div>
+          <div class="chart-wrap" style="margin-bottom:14px;"><canvas id="modalChart"></canvas></div>
+          <div class="pro-muted">This chart tracks market changes when values are refreshed. Brand-new cards show an estimated trend until more snapshots exist.</div>
+        </div>
+      </div>
+      <div class="tab-pane" id="tab-set"><div class="pro-section"><div id="modalSetContent"></div></div></div>
+      <div class="tab-pane" id="tab-info"><div class="pro-section"><div id="modalInfoRows"></div></div></div>
+
+      <div class="modal-add-row">
+        <select class="cond-sel" id="modalCond">
+          <option value="NM">Near Mint</option><option value="LP">Lightly Played</option>
+          <option value="MP">Mod. Played</option><option value="HP">Heavily Played</option>
+          <option value="DMG">Damaged</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" id="modalWantBtn" title="Add to wishlist">🎯 Want</button>
+        <button class="btn btn-primary" id="modalAddBtn">+ Add</button>
+      </div>
     </div>
   </div>
 </div>

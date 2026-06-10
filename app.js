@@ -16,23 +16,17 @@ const EBAY_COND = { NM:'1000', LP:'1500', MP:'2000', HP:'3000', DMG:'4000' };
 
 // ── INIT ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  const k = getKeys();
-  document.getElementById('sClientId').value = k.clientId;
-  document.getElementById('sClientSecret').value = k.clientSecret;
+  // eBay keys are stored server-side — no client init needed
   renderCollection();
   loadSets();
   loadHome();
 });
 
-// ── KEYS ─────────────────────────────────────────────────
-function getKeys() {
-  return { clientId: localStorage.getItem('holodex_ebay_id')||'', clientSecret: localStorage.getItem('holodex_ebay_secret')||'' };
-}
-function saveKeys() {
-  localStorage.setItem('holodex_ebay_id', document.getElementById('sClientId').value.trim());
-  localStorage.setItem('holodex_ebay_secret', document.getElementById('sClientSecret').value.trim());
-}
-function hasKeys() { const k=getKeys(); return !!(k.clientId&&k.clientSecret); }
+// ── KEYS — stored server-side in Netlify env vars ────────
+// No client-side key storage needed — ebay-token function handles auth
+function getKeys() { return { clientId: '', clientSecret: '' }; }
+function saveKeys() {}
+function hasKeys() { return true; } // always try — server will handle missing keys gracefully
 
 async function testEbayKeys() {
   const statusEl = document.getElementById('ebayStatus');
@@ -45,10 +39,10 @@ async function testEbayKeys() {
     return;
   }
   try {
-    const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+    const res = await fetch('/.netlify/functions/ebay-token', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Authorization': 'Basic ' + btoa(clientId + ':' + clientSecret) },
-      body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId, clientSecret })
     });
     const d = await res.json();
     if (d.access_token) {
@@ -200,16 +194,12 @@ async function manualSearch() {
 // ── EBAY TOKEN ────────────────────────────────────────────
 async function getEbayToken() {
   if(ebayToken&&Date.now()<ebayTokenExp) return ebayToken;
-  const {clientId,clientSecret}=getKeys();
-  if(!clientId||!clientSecret) return null;
   try {
-    const res = await fetch('https://api.ebay.com/identity/v1/oauth2/token',{
-      method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','Authorization':'Basic '+btoa(clientId+':'+clientSecret)},
-      body:'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope'
-    });
+    const res = await fetch('/.netlify/functions/ebay-token', { method:'POST', headers:{'Content-Type':'application/json'} });
     const d = await res.json();
     if(d.access_token){ebayToken=d.access_token;ebayTokenExp=Date.now()+(d.expires_in-60)*1000;return ebayToken;}
-  } catch(e){}
+    console.warn('eBay token error:', d.error);
+  } catch(e){ console.warn('eBay token fetch error:', e.message); }
   return null;
 }
 

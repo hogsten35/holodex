@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════
-//  HoloDex v2  |  BossHog Gaming  |  app.js
+//  HoloDex v3  |  BossHog Gaming  |  app.js
 // ═══════════════════════════════════════════
 
 // ── STATE ────────────────────────────────────────────────
@@ -445,25 +445,203 @@ async function fetchPriceHistory(query) {
   return null;
 }
 
+
+
+// ── CARD RESOLUTION ─────────────────────────────────────
+// Vision can read the card name but still guess the wrong set/collector number.
+// Before showing a result, we validate the scan against PokémonTCG.io and keep the
+// exact printing with the best score.
+function cleanText(v) {
+  return String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function firstCardNumber(v) {
+  const m = String(v || '').match(/[A-Z]*\d+[a-z]?/i);
+  return m ? m[0].replace(/^0+(?=\d)/, '') : '';
+}
+
+function displayTcgNumber(apiCard) {
+  const n = apiCard?.number;
+  if (!n) return null;
+  const total = apiCard?.set?.printedTotal;
+  if (total && /^\d+$/.test(String(n))) {
+    const pad = String(total).length;
+    return `${String(n).padStart(pad, '0')}/${total}`;
+  }
+  return n;
+}
+
+function cardTextBlob(apiCard) {
+  const abilities = (apiCard.abilities || []).map(a => `${a.name} ${a.text}`).join(' ');
+  const attacks = (apiCard.attacks || []).map(a => `${a.name} ${a.text} ${a.damage}`).join(' ');
+  return cleanText(`${apiCard.name} ${apiCard.hp || ''} ${(apiCard.types || []).join(' ')} ${apiCard.rarity || ''} ${abilities} ${attacks}`);
+}
+
+function scannedTextBlob(card) {
+  const abilities = Array.isArray(card.abilities) ? card.abilities.join(' ') : (card.ability || '');
+  const attacks = Array.isArray(card.attacks) ? card.attacks.join(' ') : (card.attack || '');
+  return cleanText(`${card.visible_text || ''} ${card.hp || ''} ${(card.types || []).join(' ')} ${card.rarity || ''} ${abilities} ${attacks}`);
+}
+
+function scoreTcgCandidate(apiCard, scan) {
+  const apiName = cleanText(apiCard.name);
+  const scanName = cleanText(scan.name || scan.pokemon);
+  const apiNum = firstCardNumber(apiCard.number);
+  const scanNum = firstCardNumber(scan.number);
+  const apiSet = cleanText(apiCard.set?.name);
+  const scanSet = cleanText(scan.set);
+  const scanSetId = cleanText(scan.set_id);
+  const apiBlob = cardTextBlob(apiCard);
+  const scanBlob = scannedTextBlob(scan);
+
+  let score = 0;
+  if (scanName && apiName === scanName) score += 70;
+  else if (scanName && (apiName.includes(scanName) || scanName.includes(apiName))) score += 35;
+  else score -= 90;
+
+  // Number/set are useful, but vision models often hallucinate them on blurry photos.
+  // Treat them as hints, not truth.
+  if (scanNum && apiNum) {
+    if (scanNum === apiNum) score += 45;
+    else score -= 10;
+  }
+
+  if (scan.set_id && apiCard.set?.id && cleanText(apiCard.set.id) === scanSetId) score += 25;
+  if (scanSet && apiSet.includes(scanSet)) score += 20;
+  if (scan.year && apiCard.set?.releaseDate?.startsWith(String(scan.year))) score += 10;
+  if (scan.hp && String(apiCard.hp || '') === String(scan.hp)) score += 18;
+
+  for (const t of (scan.types || [])) {
+    if ((apiCard.types || []).map(cleanText).includes(cleanText(t))) score += 8;
+  }
+
+  // Visible move/ability text is the strongest way to select the exact printing.
+  // Example: the photographed Psyduck shows “Damp” and “Ram 20”; that beats a
+  // guessed collector number from another Psyduck card.
+  const signalSource = [
+    ...(Array.isArray(scan.abilities) ? scan.abilities : [scan.ability || '']),
+    ...(Array.isArray(scan.attacks) ? scan.attacks : [scan.attack || ''])
+  ].join(' ');
+  const stop = new Set(['pokemon','ability','attack','damage','weakness','resistance','retreat','card','near','mint','condition','sleeve','protective','colorless','energy']);
+  const signals = cleanText(signalSource).split(' ').filter(w => w.length >= 3 && !stop.has(w) && !/^\d+$/.test(w));
+  let signalMatches = 0;
+  for (const w of new Set(signals)) {
+    if (apiBlob.includes(w)) { score += 34; signalMatches++; }
+  }
+  if (signals.length >= 1 && signalMatches === 0) score -= 70;
+
+  // visible_text is weaker because it may contain generic card-template words.
+  if (scanBlob) {
+    const important = scanBlob.split(' ').filter(w => w.length >= 4 && !stop.has(w) && !/^\d+$/.test(w));
+    for (const w of new Set(important).values()) {
+      if (apiBlob.includes(w)) score += 4;
+    }
+  }
+
+  return score;
+}
+
+function tcgToHoloDexCard(apiCard, scan = {}) {
+  const displayNumber = displayTcgNumber(apiCard) || scan.number || null;
+  return {
+    ...scan,
+    name: apiCard.name || scan.name,
+    pokemon: scan.pokemon || apiCard.name?.split(' ')?.[0] || scan.name,
+    set: apiCard.set?.name || scan.set || null,
+    set_id: apiCard.set?.id || scan.set_id || null,
+    number: displayNumber,
+    year: apiCard.set?.releaseDate?.substring(0, 4) || scan.year || null,
+    rarity: apiCard.rarity || scan.rarity || null,
+    hp: apiCard.hp || scan.hp || null,
+    types: apiCard.types || scan.types || [],
+    artist: apiCard.artist || scan.artist || null,
+    condition: scan.condition || 'NM',
+    condition_notes: scan.condition_notes || null,
+    search_query: `Pokemon ${apiCard.name || scan.name || ''} ${displayNumber || ''} ${apiCard.set?.name || scan.set || ''}`.trim(),
+    _tcgId: apiCard.id || scan._tcgId || null,
+    _tcgImage: apiCard.images?.large || apiCard.images?.small || scan._tcgImage || null,
+    _resolvedScore: apiCard._score || null
+  };
+}
+
+async function fetchTcgCandidates(scan) {
+  const attempts = [];
+  const name = String(scan.name || scan.pokemon || '').trim();
+  const num = firstCardNumber(scan.number);
+
+  if (scan.set_id && num) attempts.push(`set.id:${scan.set_id} number:${num}`);
+  if (name && num) attempts.push(`name:"${name}" number:${num}`);
+  if (scan.set_id && name) attempts.push(`set.id:${scan.set_id} name:"${name}"`);
+  if (name) attempts.push(`name:"${name}"`);
+  if (scan.pokemon && cleanText(scan.pokemon) !== cleanText(name)) attempts.push(`name:"${scan.pokemon}"`);
+
+  const seenQueries = new Set();
+  const seenCards = new Set();
+  const out = [];
+
+  for (const q of attempts) {
+    const key = q.toLowerCase();
+    if (seenQueries.has(key)) continue;
+    seenQueries.add(key);
+    try {
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=250`);
+      if (!res.ok) continue;
+      const d = await res.json();
+      for (const c of (d.data || [])) {
+        if (seenCards.has(c.id)) continue;
+        seenCards.add(c.id);
+        out.push(c);
+      }
+    } catch(e) {
+      console.warn('TCG candidate lookup failed:', q, e.message);
+    }
+  }
+  return out;
+}
+
+async function resolveCardWithTcg(scan) {
+  const srcEl = document.getElementById('priceSrc');
+  const candidates = await fetchTcgCandidates(scan);
+  if (!candidates.length) {
+    if (srcEl) srcEl.textContent = 'Could not verify exact print from PokémonTCG.io';
+    return scan;
+  }
+
+  const scored = candidates.map(c => ({ ...c, _score: scoreTcgCandidate(c, scan) }))
+    .sort((a, b) => b._score - a._score);
+  const best = scored[0];
+  const second = scored[1];
+
+  // If the top result is not clearly better, keep the AI result but still use the best image.
+  // This prevents false “corrections” on blurry photos.
+  const confident = best._score >= 70 && (!second || best._score - second._score >= 12);
+  if (!confident && srcEl) {
+    srcEl.textContent = 'Best match not fully certain — retake photo straight-on for exact print';
+  }
+
+  const resolved = tcgToHoloDexCard(best, scan);
+  resolved._matchWarning = !confident;
+  console.log('HoloDex resolved scan:', {
+    ai: { name: scan.name, set: scan.set, number: scan.number, set_id: scan.set_id },
+    selected: { name: resolved.name, set: resolved.set, number: resolved.number, set_id: resolved.set_id, tcgId: resolved._tcgId, score: best._score },
+    runnerUp: second ? { name: second.name, set: second.set?.name, number: second.number, score: second._score } : null
+  });
+  return resolved;
+}
+
 async function fetchCardImage(card) {
   try {
-    // Build attempts from most to least specific
-    const attempts = [];
-    if(card.set_id && card.number) {
-      const num = card.number.split('/')[0].replace(/^0+/,'');
-      attempts.push(`set.id:${card.set_id} number:${num}`);
-    }
-    if(card.set_id) attempts.push(`set.id:${card.set_id} name:"${card.name}"`);
-    attempts.push(`name:"${card.name}"`);
-
-    for(const q of attempts) {
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards?q=${encodeURIComponent(q)}&pageSize=4`);
+    if (card?._tcgImage) return card._tcgImage;
+    if (card?._tcgId) {
+      const res = await fetch(`https://api.pokemontcg.io/v2/cards/${card._tcgId}`);
       const d = await res.json();
-      if(d.data?.length) {
-        const match = d.data.find(c => card.set_id && c.set?.id === card.set_id) || d.data[0];
-        if(currentCard) currentCard._tcgId = match.id;
-        return match.images?.large || match.images?.small;
-      }
+      if (d.data?.images) return d.data.images.large || d.data.images.small;
+    }
+
+    const resolved = await resolveCardWithTcg(card);
+    if (resolved?._tcgImage) {
+      if (currentCard && card === currentCard) Object.assign(currentCard, resolved);
+      return resolved._tcgImage;
     }
   } catch(e) { console.warn('Card image error:', e.message); }
   return null;
@@ -530,6 +708,11 @@ async function scanCard() {
     if(!m) throw new Error('Could not parse card data. Raw response: ' + raw.substring(0, 100));
     currentCard = JSON.parse(m[0]);
     currentCard._tcgId=null; currentCard._prices=null; currentCard._history=null;
+
+    setScanStatus('Matching exact print…'); setProgress(65);
+    currentCard = await resolveCardWithTcg(currentCard);
+    if(scanAborted) return;
+
     const imgPromise = fetchCardImage(currentCard);
     let prices=null, history=null;
     if(hasKeys()) [prices,history]=await Promise.all([fetchEbayPrices(currentCard.search_query),fetchPriceHistory(currentCard.search_query)]);
@@ -549,6 +732,8 @@ async function scanCard() {
 }
 
 async function showCardResults(card) {
+  card = await resolveCardWithTcg(card);
+  currentCard = card;
   document.getElementById('resultArea').classList.add('show');
   document.getElementById('scanResult') && (document.getElementById('scanResult').style.display='block');
   document.getElementById('resultName').textContent = card.name||'Unknown';

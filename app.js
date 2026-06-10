@@ -316,6 +316,9 @@ function hideScanOverlay() {
   document.getElementById('scanLine').classList.remove('active');
   document.getElementById('holoOverlay').classList.remove('active');
   document.getElementById('scanDataGrid').classList.remove('active');
+  // Reset hint text
+  const hint = document.getElementById('scanHintText');
+  if(hint) { hint.style.opacity='1'; hint.textContent='Align card within corners'; }
 }
 function cancelScan(){hideScanOverlay();scanAborted=true;}
 function setStep(i,s){
@@ -342,6 +345,9 @@ async function scanCard() {
   setStep(0,'done'); setStep(1,'active'); setScanStatus('Analyzing card…'); setProgress(20);
   document.getElementById('scanLine').classList.add('active');
   document.getElementById('holoOverlay').classList.add('active');
+  // Hide alignment hint once scanning begins
+  const hint = document.getElementById('scanHintText');
+  if(hint) { hint.style.opacity='0'; hint.style.transition='opacity 0.4s'; }
   try {
     const identifyPromise = fetch('/.netlify/functions/identify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imageBase64:imgB64})});
     await sleep(1400); if(scanAborted) return;

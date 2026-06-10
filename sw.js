@@ -1,4 +1,4 @@
-const CACHE = 'holodex-v3';
+const CACHE = 'holodex-v4';
 const SHELL = ['/', '/index.html', '/app.js', '/manifest.json', '/scan-phone.html', '/favicon.ico', '/icons/icon-192.png', '/icons/icon-512.png'];
 
 self.addEventListener('install', event => {

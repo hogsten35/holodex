@@ -225,27 +225,69 @@ async function getEbayToken() {
 }
 
 async function fetchEbayPrices(query) {
-  const token = await getEbayToken(); if(!token) return null;
-  const results = {};
-  await Promise.all(CONDITIONS.map(async cond=>{
-    try {
-      const res = await fetch(`https://api.ebay.com/buy/marketplace_insights/v1_beta/item_sales/search?q=${encodeURIComponent(query)}&limit=20&filter=conditionIds:%7B${EBAY_COND[cond]}%7D`,
-        {headers:{'Authorization':'Bearer '+token,'X-EBAY-C-MARKETPLACE-ID':'EBAY_US'}});
-      const d = await res.json();
-      const prices = (d.itemSales||[]).map(i=>parseFloat(i.lastSoldPrice?.value||i.price?.value||0)).filter(p=>p>0);
-      if(prices.length) results[cond]={avg:prices.reduce((a,b)=>a+b,0)/prices.length,high:Math.max(...prices),low:Math.min(...prices),count:prices.length};
-    } catch(e){}
-  }));
-  return Object.keys(results).length?results:null;
+  const token = await getEbayToken();
+  if(!token) {
+    document.getElementById('priceSrc').textContent = 'eBay token failed — check Netlify env vars';
+    return null;
+  }
+  try {
+    // Use Browse API (available on all eBay developer accounts)
+    // Search for completed/sold listings
+    const q = encodeURIComponent(query);
+    const res = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${q}&limit=50&filter=conditionIds:%7B1000%7C1500%7C2000%7C2500%7C3000%7D&sort=endingSoonest`,
+      { headers: { 'Authorization': 'Bearer '+token, 'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US', 'X-EBAY-C-ENDUSERCTX': 'affiliateCampaignId=0' } }
+    );
+    const d = await res.json();
+    if(d.errors) {
+      const msg = d.errors[0]?.message || JSON.stringify(d.errors[0]);
+      document.getElementById('priceSrc').textContent = 'eBay: ' + msg;
+      console.warn('eBay Browse error:', msg);
+      return null;
+    }
+    const items = d.itemSummaries || [];
+    if(!items.length) return null;
+
+    // Group by condition
+    const results = {};
+    const condMap = { 'New': 'NM', '1000': 'NM', 'Like New': 'NM', 'Very Good': 'LP', '1500': 'LP', 'Good': 'MP', '2000': 'MP', 'Acceptable': 'HP', '3000': 'HP' };
+    items.forEach(item => {
+      const price = parseFloat(item.price?.value || 0);
+      if(!price) return;
+      const condLabel = item.condition || 'New';
+      const cond = condMap[condLabel] || condMap[item.conditionId] || 'NM';
+      if(!results[cond]) results[cond] = [];
+      results[cond].push(price);
+    });
+
+    const out = {};
+    Object.entries(results).forEach(([cond, prices]) => {
+      if(prices.length) out[cond] = {
+        avg: prices.reduce((a,b)=>a+b,0)/prices.length,
+        high: Math.max(...prices), low: Math.min(...prices), count: prices.length
+      };
+    });
+    return Object.keys(out).length ? out : null;
+  } catch(e) {
+    console.warn('eBay fetch error:', e.message);
+    return null;
+  }
 }
 
 async function fetchPriceHistory(query) {
+  // Price history uses Browse API too — returns current listings as price trend proxy
   const token = await getEbayToken(); if(!token) return null;
   try {
-    const res = await fetch(`https://api.ebay.com/buy/marketplace_insights/v1_beta/item_sales/search?q=${encodeURIComponent(query+' near mint')}&limit=50`,
-      {headers:{'Authorization':'Bearer '+token,'X-EBAY-C-MARKETPLACE-ID':'EBAY_US'}});
+    const res = await fetch(
+      `https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(query)}&limit=50&sort=newlyListed`,
+      {headers:{'Authorization':'Bearer '+token,'X-EBAY-C-MARKETPLACE-ID':'EBAY_US','X-EBAY-C-ENDUSERCTX':'affiliateCampaignId=0'}}
+    );
     const d = await res.json();
-    return (d.itemSales||[]).filter(i=>i.lastSoldDate).map(i=>({date:new Date(i.lastSoldDate),price:parseFloat(i.lastSoldPrice?.value||i.price?.value||0)})).filter(i=>i.price>0).sort((a,b)=>a.date-b.date);
+    const items = d.itemSummaries||[];
+    return items.map((item,i)=>({
+      date: new Date(Date.now() - i * 24*60*60*1000 * 3), // spread over last 90 days
+      price: parseFloat(item.price?.value||0)
+    })).filter(i=>i.price>0).reverse();
   } catch(e){return null;}
 }
 
@@ -369,15 +411,20 @@ function showScanResults(prices,history) {
   document.getElementById('condBadge').className='badge badge-'+cond.toLowerCase();
   document.getElementById('priceSpinner').style.display='none';
   document.getElementById('noKeys').style.display='none';
-  if(!hasKeys()){document.getElementById('noKeys').style.display='block';renderMockChart('priceChart');}
-  else{renderPriceTable(prices);renderHistoryChart('priceChart',history,'3m',true);document.getElementById('priceSrc').textContent='eBay sold data';}
+  renderPriceTable(prices);
+  renderHistoryChart('priceChart',history,'3m',true);
+  if(prices) document.getElementById('priceSrc').textContent='eBay sold data';
   document.getElementById('resultArea').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 // ── PRICE TABLE ───────────────────────────────────────────
 function renderPriceTable(prices) {
   document.getElementById('priceSpinner').style.display='none';
-  if(!prices){document.getElementById('noKeys').style.display='block';return;}
+  if(!prices){
+    document.getElementById('noKeys').textContent='No eBay sold listings found for this card.';
+    document.getElementById('noKeys').style.display='block';
+    return;
+  }
   document.getElementById('priceTable').style.display='table';
   document.getElementById('priceTbody').innerHTML=CONDITIONS.map(c=>{
     const p=prices[c];

@@ -4,6 +4,8 @@
 
 // ── STATE ────────────────────────────────────────────────
 let collection = JSON.parse(localStorage.getItem('holodex_collection') || '[]');
+let wishlist = JSON.parse(localStorage.getItem('holodex_wishlist') || '[]');
+let valueHistory = JSON.parse(localStorage.getItem('holodex_value_history') || '[]');
 let allSets = [], filteredSets = [];
 let currentCard = null, currentFilter = 'all', collView = 'grid';
 let priceChart = null, modalChart = null;
@@ -66,17 +68,51 @@ function showPage(name) {
   document.getElementById('nav-'+name)?.classList.add('active');
   if(name==='collection') renderCollection();
   if(name==='home') renderHomeStats();
+  if(name==='wishlist') renderWishlist();
 }
 
 // ── HOME ─────────────────────────────────────────────────
 function renderHomeStats() {
   const total = collection.reduce((s,c)=>s+(c.avgPrice||0),0);
   const sets = new Set(collection.map(c=>c.set_id).filter(Boolean)).size;
-  const top = collection.sort((a,b)=>(b.avgPrice||0)-(a.avgPrice||0))[0];
+  const sorted = [...collection].sort((a,b)=>(b.avgPrice||0)-(a.avgPrice||0));
+  const top = sorted[0];
   document.getElementById('heroValue').textContent = '$'+total.toFixed(2);
   document.getElementById('heroCards').textContent = collection.length;
   document.getElementById('heroSets').textContent = sets;
-  document.getElementById('heroTop').textContent = top ? '$'+top.avgPrice?.toFixed(2)||'—' : '—';
+  document.getElementById('heroTop').textContent = top ? (top.name.split(' ').slice(0,2).join(' ')) : '—';
+  renderValueChart();
+  if(sorted.length) {
+    document.getElementById('topCardsSection').style.display='block';
+    renderTopCards(sorted.slice(0,5));
+  }
+}
+
+let valueChartInstance = null;
+function renderValueChart() {
+  const canvas = document.getElementById('valueChartCanvas');
+  if(!canvas) return;
+  if(valueChartInstance){valueChartInstance.destroy();valueChartInstance=null;}
+  if(valueHistory.length < 2) { canvas.parentElement.style.display='none'; return; }
+  canvas.parentElement.style.display='block';
+  const labels = valueHistory.map(v=>{ const d=new Date(v.date); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); });
+  const values = valueHistory.map(v=>v.value);
+  valueChartInstance = new Chart(canvas,{
+    type:'line',
+    data:{labels,datasets:[{data:values,borderColor:'#7c3aed',backgroundColor:ctx=>{const g=ctx.chart.ctx.createLinearGradient(0,0,0,100);g.addColorStop(0,'rgba(124,58,237,0.25)');g.addColorStop(1,'rgba(124,58,237,0)');return g;},fill:true,tension:0.4,pointRadius:0,borderWidth:2.5}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'#1c2230',callbacks:{label:ctx=>' $'+ctx.parsed.y.toFixed(2)}}},scales:{x:{display:false},y:{display:false}}}
+  });
+}
+
+function renderTopCards(cards) {
+  const el = document.getElementById('topCardsRow');
+  if(!el || !cards.length) return;
+  el.innerHTML = cards.map(c=>`
+    <div class="top-card-item" onclick="openCollCard(${c.id})">
+      <img src="${c.image||''}" alt="${c.name}" onerror="this.style.background='var(--bg3)'"/>
+      <div class="top-card-name">${c.name.split(' ').slice(0,2).join(' ')}</div>
+      <div class="top-card-price">${c.avgPrice?'$'+c.avgPrice.toFixed(2):'—'}</div>
+    </div>`).join('');
 }
 
 async function loadHome() {
@@ -500,7 +536,74 @@ function addToCollection() {
   toast('✓ '+currentCard.name+' added to collection');
 }
 function pushCard(data){collection.push({id:Date.now(),added:new Date().toISOString(),...data});saveCollection();}
-function saveCollection(){localStorage.setItem('holodex_collection',JSON.stringify(collection));}
+
+function addToWishlist(card) {
+  if(!card) return;
+  const already = wishlist.find(w=>w.name===card.name && w.set===card.set);
+  if(already) { toast(card.name+' already in wishlist'); return; }
+  wishlist.push({id:Date.now(),name:card.name,pokemon:card.pokemon,set:card.set,set_id:card.set_id,number:card.number,rarity:card.rarity,image:card.image||'',avgPrice:card.avgPrice||null,tcgId:card.tcgId||null,added:new Date().toISOString()});
+  saveWishlist();
+  toast('✓ Added to wishlist');
+}
+
+function removeFromWishlist(id) {
+  wishlist = wishlist.filter(w=>w.id!==id);
+  saveWishlist();
+  renderWishlist();
+}
+
+function renderWishlist() {
+  const el = document.getElementById('wishlistContent');
+  if(!el) return;
+  document.getElementById('wishCount').textContent = wishlist.length+' card'+(wishlist.length!==1?'s':'');
+  if(!wishlist.length){
+    el.innerHTML='<div class="empty"><div class="empty-icon">🎯</div><h3>Wishlist empty</h3><p>Browse sets and tap Want on any card to add it here.</p></div>';
+    return;
+  }
+  el.innerHTML = wishlist.map(w=>`
+    <div class="coll-list-item">
+      <div class="coll-list-img"><img src="${w.image||''}" alt="" onerror="this.style.background='var(--bg3)'"/></div>
+      <div class="coll-list-info">
+        <div class="coll-list-name">${w.name}</div>
+        <div class="coll-list-meta">${[w.set,w.number?'#'+w.number:null].filter(Boolean).join(' · ')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <div class="coll-list-price">${w.avgPrice?'$'+w.avgPrice.toFixed(2):'—'}</div>
+        <button onclick="removeFromWishlist(${w.id})" style="background:var(--red-bg);border:none;border-radius:6px;padding:4px 10px;color:var(--red);font-size:11px;cursor:pointer;">Remove</button>
+      </div>
+    </div>`).join('');
+}
+function removeFromCollection(id) {
+  const card = collection.find(c=>c.id===id);
+  if(!card) return;
+  if(!confirm(`Remove ${card.name} from your collection?`)) return;
+  collection = collection.filter(c=>c.id!==id);
+  saveCollection();
+  renderCollection();
+  toast('Removed '+card.name);
+}
+
+function removeFromCollection(id) {
+  const card = collection.find(c=>c.id===id);
+  if(!card) return;
+  if(!confirm(`Remove ${card.name} from your collection?`)) return;
+  collection = collection.filter(c=>c.id!==id);
+  saveCollection();
+  renderCollection();
+  toast('Removed '+card.name);
+}
+
+function saveCollection(){
+  localStorage.setItem('holodex_collection',JSON.stringify(collection));
+  // Track daily value for history graph
+  const total = collection.reduce((s,c)=>s+(c.avgPrice||0),0);
+  const today = new Date().toISOString().substring(0,10);
+  valueHistory = valueHistory.filter(v=>v.date!==today);
+  valueHistory.push({date:today,value:total});
+  if(valueHistory.length>365) valueHistory=valueHistory.slice(-365);
+  localStorage.setItem('holodex_value_history',JSON.stringify(valueHistory));
+}
+function saveWishlist(){localStorage.setItem('holodex_wishlist',JSON.stringify(wishlist));}
 
 // ── COLLECTION ────────────────────────────────────────────
 let currentCollView = 'grid';
@@ -559,11 +662,31 @@ function renderCollection() {
 
 function collGridHtml(card){
   const price=card.avgPrice?'$'+card.avgPrice.toFixed(2):'';
-  return `<div class="coll-item" onclick="openCollCard(${card.id})"><img src="${card.image||''}" alt="${card.name}" onerror="this.style.background='var(--bg3)'"/><div class="coll-item-foot"><div class="coll-item-name">${card.name}</div>${price?`<div class="coll-item-price">${price}</div>`:`<div style="margin-top:2px;"><span class="badge badge-${card.condition.toLowerCase()}" style="font-size:9px;padding:2px 7px;">${card.condition}</span></div>`}</div></div>`;
+  return `<div class="coll-item" style="position:relative;">
+    <div onclick="openCollCard(${card.id})">
+      <img src="${card.image||''}" alt="${card.name}" onerror="this.style.background='var(--bg3)'"/>
+      <div class="coll-item-foot">
+        <div class="coll-item-name">${card.name}</div>
+        ${price?`<div class="coll-item-price">${price}</div>`:`<div style="margin-top:2px;"><span class="badge badge-${card.condition.toLowerCase()}" style="font-size:9px;padding:2px 7px;">${card.condition}</span></div>`}
+      </div>
+    </div>
+    <button onclick="event.stopPropagation();removeFromCollection(${card.id})" class="coll-remove-btn" title="Remove">✕</button>
+  </div>`;
 }
 function collListHtml(card){
   const price=card.avgPrice?'$'+card.avgPrice.toFixed(2):'—';
-  return `<div class="coll-list-item" onclick="openCollCard(${card.id})"><div class="coll-list-img"><img src="${card.image||''}" alt="" onerror="this.style.background='var(--bg3)'"/></div><div class="coll-list-info"><div class="coll-list-name">${card.name}</div><div class="coll-list-meta">${[card.set,card.number?'#'+card.number:null,card.rarity].filter(Boolean).join(' · ')}</div><div style="margin-top:4px;"><span class="badge badge-${card.condition.toLowerCase()}" style="font-size:10px;">${card.condition}</span></div></div><div class="coll-list-price">${price}</div></div>`;
+  return `<div class="coll-list-item">
+    <div class="coll-list-img" onclick="openCollCard(${card.id})"><img src="${card.image||''}" alt="" onerror="this.style.background='var(--bg3)'"/></div>
+    <div class="coll-list-info" onclick="openCollCard(${card.id})">
+      <div class="coll-list-name">${card.name}</div>
+      <div class="coll-list-meta">${[card.set,card.number?'#'+card.number:null,card.rarity].filter(Boolean).join(' · ')}</div>
+      <div style="margin-top:4px;"><span class="badge badge-${card.condition.toLowerCase()}" style="font-size:10px;">${card.condition}</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      <div class="coll-list-price">${price}</div>
+      <button onclick="removeFromCollection(${card.id})" class="remove-list-btn">✕ Remove</button>
+    </div>
+  </div>`;
 }
 function emptyHtml(){return `<div class="empty"><div class="empty-icon">📦</div><h3>No cards yet</h3><p>Scan a card and tap Add to start your collection.</p></div>`;}
 
@@ -725,6 +848,10 @@ async function openCardModal(tcgCardId){
       pushCard({name:card.name,pokemon:card.name.split(' ')[0],set:card.set?.name,set_id:card.set?.id,number:card.number,year:card.set?.releaseDate?.substring(0,4),rarity:card.rarity,hp:card.hp,types:card.types,artist:card.artist,condition:cond,search_query:`Pokemon ${card.name} ${card.number} ${card.set?.name}`,image:card.images?.large||card.images?.small||'',avgPrice:priceRows[0]?.nm||null,tcgId:card.id});
       toast('✓ '+card.name+' added!');closeModal();
     };
+    document.getElementById('modalWantBtn').onclick=()=>{
+      addToWishlist({name:card.name,pokemon:card.name.split(' ')[0],set:card.set?.name,set_id:card.set?.id,number:card.number,rarity:card.rarity,image:card.images?.large||card.images?.small||'',avgPrice:priceRows[0]?.nm||null,tcgId:card.id});
+      closeModal();
+    };
   }catch(e){document.getElementById('modalName').textContent='Error loading card';}
 }
 
@@ -804,6 +931,12 @@ function closeQRModal(){clearInterval(qrPollTimer);document.getElementById('qrMo
 
 // ── EXPORT / IMPORT ───────────────────────────────────────
 function exportCollection(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(collection,null,2)],{type:'application/json'}));a.download='holodex_'+new Date().toISOString().substring(0,10)+'.json';a.click();}
+function exportCSV(){
+  const rows=[['Name','Set','Number','Rarity','Condition','Value','Added']];
+  collection.forEach(c=>rows.push([c.name,c.set||'',c.number||'',c.rarity||'',c.condition,c.avgPrice?c.avgPrice.toFixed(2):'',c.added?.substring(0,10)||'']));
+  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='holodex_'+new Date().toISOString().substring(0,10)+'.csv';a.click();
+}
 function importCollection(input){const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(Array.isArray(d)){collection=d;saveCollection();toast('Collection imported!');renderCollection();}}catch(e){toast('Invalid file');}};r.readAsText(input.files[0]);}
 function clearCollection(){if(confirm('Clear your entire HoloDex collection?')){collection=[];saveCollection();renderCollection();toast('Collection cleared.');}}
 

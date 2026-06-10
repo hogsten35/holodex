@@ -598,13 +598,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
       <div class="settings-sec">
         <h3>eBay API — Real Sold Prices</h3>
         <div class="ebay-info-box">
-          <strong>How to get your keys:</strong><br/>
-          1. Go to developer.ebay.com → My Account → Application Keysets<br/>
-          2. Under Production — copy App ID and Cert ID<br/>
-          3. Paste below — saved in your browser only
+          <strong>eBay pricing is enabled server-side.</strong><br/>
+          Real sold prices are pulled automatically when you scan a card. No keys needed here — they are securely stored on the server.
         </div>
-        <div class="settings-row"><div><div class="sl">App ID (Client ID)</div><div class="ss">Production keyset</div></div><input type="password" id="sClientId" placeholder="Paste App ID" oninput="saveKeys()"/></div>
-        <div class="settings-row"><div><div class="sl">Cert ID (Client Secret)</div><div class="ss">Production keyset</div></div><input type="password" id="sClientSecret" placeholder="Paste Cert ID" oninput="saveKeys()"/></div>
         <div id="ebayStatus" class="ebay-status-msg" style="display:none;"></div>
         <button class="test-ebay-btn" onclick="testEbayKeys()">Test eBay Connection</button>
       </div>
